@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · DAV University · CSE Timetable Management System</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="login.css">
+</head>
+<body>
+
+<!-- ================= LETTERHEAD ================= -->
+<header class="letterhead">
+  <div class="letterhead-inner">
+    <div class="letterhead-brand">
+      <img src="assets/logo.svg" alt="DAV University crest" class="crest">
+      <div class="brand-text">
+        <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+        <h1 class="dept-name">Department of Computer Science &amp; Engineering</h1>
+        <p class="sys-name">Constraint-Based University Timetable Optimization System</p>
+      </div>
+    </div>
+    <div class="letterhead-motto">
+      <p class="motto-hindi">असतो मा सद्गमय</p>
+      <p class="motto-en">"Lead us from darkness to light"</p>
+    </div>
+  </div>
+  <div class="letterhead-rule"></div>
+</header>
+
+<div class="login-wrap">
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <p class="board-eyebrow login-eyebrow">Restricted access</p>
+    <h2 class="login-title">Sign in to continue</h2>
+    <p class="login-sub">Enter the department credentials to open the timetable board.</p>
+
+    <div id="loginError" class="notice err login-error" style="display:none;"></div>
+
+    <label class="login-label" for="username">Username</label>
+    <input class="login-input" id="username" name="username" type="text" autocomplete="username" required autofocus>
+
+    <label class="login-label" for="password">Password</label>
+    <input class="login-input" id="password" name="password" type="password" autocomplete="current-password" required>
+
+    <button class="btn btn-primary login-btn" id="loginSubmit" type="submit">Sign in</button>
+  </form>
+</div>
+
+<footer>DAV University, Jalandhar · Dept. of CSE · Mon–Sat · Made by- Gopesh Aggarwal</footer>
+
+<script src="login.js"></script>
+</body>
+</html>

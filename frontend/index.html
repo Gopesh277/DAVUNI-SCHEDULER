@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAV University · CSE Timetable Management System</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ================= LETTERHEAD ================= -->
+<header class="letterhead">
+  <div class="letterhead-inner">
+    <div class="letterhead-brand">
+      <img src="assets/logo.svg" alt="DAV University crest" class="crest" id="crestImg">
+      <div class="brand-text">
+        <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+        <h1 class="dept-name">Department of Computer Science &amp; Engineering</h1>
+        <p class="sys-name">Constraint-Based University Timetable Optimization System</p>
+      </div>
+    </div>
+    <div class="letterhead-motto">
+      <p class="motto-hindi">असतो मा सद्गमय</p>
+      <p class="motto-en">"Lead us from darkness to light"</p>
+      <button class="logout-link" id="logoutBtn" type="button">Sign out</button>
+    </div>
+  </div>
+  <div class="letterhead-rule"></div>
+</header>
+
+<div class="app">
+
+  <div class="board">
+    <div class="board-top">
+      <div>
+        <p class="board-eyebrow">Constraint-solved · Google OR-Tools CP-SAT</p>
+        <h2 class="board-title">Weekly Timetable Board</h2>
+        <p class="board-sub">Built from the department's teaching-load register. Change the data or the rules on the right tabs — the board rebuilds around it.</p>
+      </div>
+      <div class="board-stats" id="boardStats"></div>
+    </div>
+    <div class="board-bottom">
+      <button class="btn btn-primary" id="regenBtn">⟳ Generate timetable</button>
+      <button class="btn btn-ghost" id="uploadBtn">↑ Load teaching-load file</button>
+      <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls,.csv">
+      <button class="btn btn-ghost" id="downloadBtn">↓ Download .xlsx</button>
+      <button class="btn btn-ghost" id="resetBtn">↺ Reset to sample register</button>
+      <span class="board-meta" id="genMeta"></span>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="rooms">Room-wise</div>
+    <div class="tab" data-tab="teachers">Teacher-wise</div>
+    <div class="tab" data-tab="sections">Section-wise</div>
+    <div class="tab" data-tab="load">Faculty load</div>
+    <div class="tab" data-tab="data">Manage data</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+
+  <div id="noticeArea"></div>
+
+  <!-- ROOM VIEW -->
+  <div class="panel active" id="panel-rooms">
+    <div class="section-head"><h2>Room-wise schedule</h2><span class="hint" id="roomsHint"></span></div>
+    <div class="controls">
+      <select id="roomSelect"></select>
+      <span class="pill" id="roomPill"></span>
+    </div>
+    <div class="grid-wrap"><div id="roomGridHost"></div></div>
+  </div>
+
+  <!-- TEACHER VIEW -->
+  <div class="panel" id="panel-teachers">
+    <div class="section-head"><h2>Teacher-wise schedule</h2><span class="hint">continuous lab blocks kept back-to-back</span></div>
+    <div class="controls">
+      <select id="teacherSelect"></select>
+      <span class="pill" id="teacherPill"></span>
+    </div>
+    <div class="grid-wrap"><div id="teacherGridHost"></div></div>
+  </div>
+
+  <!-- SECTION VIEW -->
+  <div class="panel" id="panel-sections">
+    <div class="section-head"><h2>Section-wise (student) schedule</h2><span class="hint">by programme &amp; semester</span></div>
+    <div class="controls">
+      <select id="sectionSelect"></select>
+      <span class="pill" id="sectionPill"></span>
+    </div>
+    <div class="grid-wrap"><div id="sectionGridHost"></div></div>
+  </div>
+
+  <!-- LOAD VIEW -->
+  <div class="panel" id="panel-load">
+    <div class="section-head"><h2>Faculty load balancer</h2><span class="hint">weekly contact hours vs. register category</span></div>
+    <div id="loadHost"></div>
+  </div>
+
+  <!-- DATA EDITOR -->
+  <div class="panel" id="panel-data">
+    <div class="section-head"><h2>Manage teaching-load register</h2><span class="hint">edits regenerate the timetable</span></div>
+    <div class="controls">
+      <button class="btn btn-ghost" id="addRowBtn">+ Add course row</button>
+      <button class="btn btn-primary" id="applyEditsBtn">Save &amp; regenerate</button>
+      <span class="pill" id="rowCountPill"></span>
+    </div>
+    <div class="editor-wrap"><div id="editorHost"></div></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="panel" id="panel-settings">
+    <div class="section-head"><h2>Department &amp; solver settings</h2><span class="hint">change rooms, days, periods, or how the solver balances load</span></div>
+
+    <div class="settings-grid">
+      <div class="settings-card">
+        <h3>Rooms</h3>
+        <p class="settings-note">One room per line. Uncheck a room below to make it lecture-only (no practicals).</p>
+        <textarea id="roomsBox" rows="6" class="textarea"></textarea>
+        <div id="labRoomsHost" class="chip-row"></div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Working days</h3>
+        <p class="settings-note">One day per line, in order.</p>
+        <textarea id="daysBox" rows="6" class="textarea"></textarea>
+      </div>
+
+      <div class="settings-card wide">
+        <h3>Periods</h3>
+        <p class="settings-note">The period index right after "Break after period" marks where the lunch break sits — a 2-period lab block will never be scheduled to straddle it.</p>
+        <div id="periodsHost"></div>
+        <button class="btn btn-ghost small" id="addPeriodBtn">+ Add period</button>
+        <div class="field-row">
+          <label>Break after period</label>
+          <input type="number" id="breakAfterInput" min="1" class="num-input">
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Solver</h3>
+        <div class="field-row"><label>Time limit (seconds)</label><input type="number" id="timeLimitInput" class="num-input" min="1" max="600"></div>
+        <div class="field-row"><label>Parallel workers</label><input type="number" id="workersInput" class="num-input" min="1" max="32"></div>
+        <div class="field-row"><label>Balance load across the week</label>
+          <label class="switch"><input type="checkbox" id="balanceInput"><span class="slider"></span></label>
+        </div>
+        <p class="settings-note">Turning balancing off finds any feasible timetable faster, without trying to spread each teacher's hours evenly across days.</p>
+      </div>
+
+      <div class="settings-card">
+        <h3>Teacher fatigue</h3>
+        <div class="field-row"><label>Max back-to-back periods</label><input type="number" id="maxConsecutiveInput" class="num-input" min="1" max="10"></div>
+        <p class="settings-note">No teacher will ever be scheduled for more than this many periods in an unbroken run on the same day. A run that crosses the lunch break doesn't count as unbroken.</p>
+      </div>
+
+      <div class="settings-card wide">
+        <h3>Daily load by faculty position</h3>
+        <p class="settings-note">Maximum periods per day allowed for each register category — e.g. senior faculty typically carry a lighter daily teaching load than contractual faculty. Matched against each course row's "Register" value on the Manage data tab (case-insensitive). Anything not listed uses the fallback cap.</p>
+        <div id="positionCapsHost" class="position-caps"></div>
+        <div class="field-row" style="margin-top:8px;">
+          <button class="btn btn-ghost small" id="addPositionBtn">+ Add category</button>
+          <label style="margin-left:auto;">Fallback cap (periods/day)</label>
+          <input type="number" id="defaultCapInput" class="num-input" min="1" max="20">
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Letterhead</h3>
+        <p class="settings-note">Have the official university crest as an image file? Replace <code>frontend/assets/logo.svg</code> (or point it at a .png/.jpg of the same name pattern) and it appears here and on the exported workbook's title.</p>
+      </div>
+    </div>
+
+    <div class="controls" style="margin-top:16px;">
+      <button class="btn btn-primary" id="saveSettingsBtn">Save settings &amp; regenerate</button>
+      <span class="pill" id="settingsSavedPill"></span>
+    </div>
+  </div>
+
+  <footer>DAV University, Jalandhar · Dept. of CSE · Mon–Sat · Made by- Gopesh Aggarwal</footer>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
