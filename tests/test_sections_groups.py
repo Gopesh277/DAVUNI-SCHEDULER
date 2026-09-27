@@ -52,3 +52,63 @@ def test_sessions_carry_group_and_base_section_through():
     kinds = {(s.group, s.base_section) for s in sessions}
     assert (None, "4A - 4th Sem") in kinds
     assert ("G1", "4A - 4th Sem") in kinds
+
+
+# ---------------------------------------------------------------------------
+# Same behaviour, but with the group marker in the SEMESTER column instead
+# of the Programme column -- real registers use both conventions (this is
+# exactly the layout that originally slipped through: "Programme/s"="B.Tech
+# CSE", "Semester"="4A(G1)").
+# ---------------------------------------------------------------------------
+
+def _offering_group_in_semester(semester, **kw):
+    base = dict(faculty="Dr. E", nature="Regular", course_code="CST1", course_name="X",
+                course_type="Pr", programme="B.Tech CSE", practical_hrs=2)
+    base.update(kw)
+    return CourseOffering(semester=semester, **base)
+
+
+def test_whole_and_groups_share_one_parent_section_marker_in_semester():
+    offs = [
+        _offering_group_in_semester("4A"),
+        _offering_group_in_semester("4A(G1)"),
+        _offering_group_in_semester("4A(G2)"),
+    ]
+    assert [o.group for o in offs] == [None, "G1", "G2"]
+    base_sections = {o.base_section for o in offs}
+    assert len(base_sections) == 1, "whole/G1/G2 rows must resolve to ONE parent section"
+
+    schedulable_sections = {o.section for o in offs}
+    assert len(schedulable_sections) == 3, "whole, G1, G2 remain distinct schedulable units"
+
+
+def test_semester_whitespace_variant_does_not_fragment_sections():
+    offs = [
+        _offering_group_in_semester("4A"),
+        _offering_group_in_semester("4A (G1)"),
+        _offering_group_in_semester("4A(G1)"),
+    ]
+    assert len({o.base_section for o in offs}) == 1
+    assert len({o.section for o in offs}) == 2  # whole vs G1
+
+
+def test_semester_text_itself_no_longer_carries_the_marker():
+    """base_semester (and therefore base_section) must not still contain
+    the literal "(G1)"/"(G2)" text -- that was the original bug: the
+    marker stayed stuck in the semester string, making "4A", "4A(G1)" and
+    "4A(G2)" look like three different semesters."""
+    o = _offering_group_in_semester("4A(G1)")
+    assert o.base_semester == "4A"
+    assert "(G1)" not in o.base_section
+    assert o.base_section == "B.Tech CSE - 4A Sem"
+
+
+def test_group_marker_in_programme_still_wins_if_both_present():
+    """Programme is checked first; an unlikely row with markers in both
+    columns should still resolve sensibly rather than erroring."""
+    o = CourseOffering(
+        faculty="Dr. E", nature="Regular", course_code="CST1", course_name="X",
+        course_type="Pr", programme="B.Tech CSE(G1)", semester="4A(G1)", practical_hrs=2,
+    )
+    assert o.group == "G1"
+    assert o.base_section == "B.Tech CSE - 4A Sem"

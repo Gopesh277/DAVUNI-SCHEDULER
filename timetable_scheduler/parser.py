@@ -23,7 +23,14 @@ and are recomputed by this application rather than trusted verbatim.
 Group handling
 --------------
 
-The parser recognizes group markers at the end of programme text:
+The parser recognizes group markers at the end of EITHER the Programme
+text or the Semester text -- different registers put them in different
+columns, and both are handled the same way:
+
+    Programme = "B.Tech CSE B(G1)", Semester = "5"
+    Programme = "B.Tech CSE B",     Semester = "5(G1)"
+
+Recognized marker forms (in either column):
 
     B.Tech CSE B(G1)
     B.Tech CSE B (G1)
@@ -39,7 +46,9 @@ All of the above resolve to:
     group = "G1"
 
 This is important because the timetable solver needs to understand that
-G1 is part of the same parent class as the shared lecture.
+G1 is part of the same parent class as the shared lecture -- regardless
+of which column the register's author put the marker in, the class stays
+one base_section.
 
 Multiple groups such as:
 
@@ -121,6 +130,26 @@ _GROUP_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+
+def _extract_group(text: str) -> tuple[str, str | None]:
+    """
+    Search `text` for a trailing group marker (see module docstring) and
+    return (text_with_marker_stripped, group_token_or_None).
+
+    A marker naming multiple groups (e.g. "(G1, G2)") is treated as a
+    shared/joint session: the marker is still stripped, but the returned
+    group is None.
+    """
+    match = _GROUP_RE.search(text)
+    if not match:
+        return text, None
+    tokens = re.findall(r"g\s*\d+", match.group(1), re.IGNORECASE)
+    normalized = sorted({t.upper().replace(" ", "") for t in tokens})
+    stripped = text[:match.start()].strip()
+    if len(normalized) == 1:
+        return stripped, normalized[0]
+    return stripped, None
 
 
 # ---------------------------------------------------------------------------
@@ -211,60 +240,28 @@ class CourseOffering:
         """
         Return the sub-group for this course row.
 
-        Examples:
+        Group markers are recognized in EITHER the Programme or the
+        Semester column, since different registers put them in different
+        places:
 
-            "B.Tech CSE B(G1)"  -> "G1"
-            "B.Tech CSE B-G1"   -> "G1"
-            "B.Tech CSE B - G1" -> "G1"
-            "B.Tech CSE B:G1"   -> "G1"
+            Programme = "B.Tech CSE B(G1)", Semester = "5"
+            Programme = "B.Tech CSE B",     Semester = "5(G1)"
 
-        A row containing multiple groups, for example:
+        both resolve to group = "G1". Programme is checked first; if it
+        has no marker, Semester is checked. Examples of recognized forms
+        (in either column):
 
-            "B.Tech CSE B(G1, G2)"
+            "...(G1)"  "... (G1)"  "...-G1"  "... - G1"  "...:G1"  "...,G1"  "...G1"
 
-        is treated as a shared/joint class and returns None.
+        A row whose marker names multiple groups, for example
+        "B.Tech CSE B(G1, G2)", is treated as a shared/joint class and
+        returns None.
         """
-
-        programme = (self.programme or "").strip()
-
-        match = _GROUP_RE.search(programme)
-
-        if not match:
-            return None
-
-        # Extract individual group tokens.
-        #
-        # Example:
-        #   "G1, G2" -> ["G1", "G2"]
-        #
-        tokens = re.findall(
-            r"g\s*\d+",
-            match.group(1),
-            re.IGNORECASE,
-        )
-
-        # Normalize:
-        #
-        #   "g 1" -> "G1"
-        #   "G 2" -> "G2"
-        #
-        normalized_tokens = sorted(
-            {
-                token.upper().replace(" ", "")
-                for token in tokens
-            }
-        )
-
-        # No valid group found.
-        if not normalized_tokens:
-            return None
-
-        # One group = actual subgroup.
-        if len(normalized_tokens) == 1:
-            return normalized_tokens[0]
-
-        # Multiple groups = shared/joint session.
-        return None
+        _, group_from_programme = _extract_group((self.programme or "").strip())
+        if group_from_programme:
+            return group_from_programme
+        _, group_from_semester = _extract_group((self.semester or "").strip())
+        return group_from_semester
 
     # -----------------------------------------------------------------------
     # Base programme
@@ -273,7 +270,8 @@ class CourseOffering:
     @property
     def base_programme(self) -> str:
         """
-        Return the programme without its trailing group marker.
+        Return the programme without its trailing group marker (if the
+        marker was in the Programme column at all -- see `group` above).
 
         Examples:
 
@@ -292,17 +290,29 @@ class CourseOffering:
             "B.Tech CSE B(G1, G2)"
                 -> "B.Tech CSE B"
         """
-
         prog = (self.programme or "Unassigned").strip()
+        stripped, _ = _extract_group(prog)
+        return _normalize_programme_text(stripped)
 
-        match = _GROUP_RE.search(prog)
+    # -----------------------------------------------------------------------
+    # Base semester
+    # -----------------------------------------------------------------------
 
-        if match:
-            # Because _GROUP_RE includes the separator before the group,
-            # match.start() points before the separator.
-            prog = prog[:match.start()]
+    @property
+    def base_semester(self) -> str:
+        """
+        Return the semester text without its trailing group marker (if the
+        marker was in the Semester column -- see `group` above).
 
-        return _normalize_programme_text(prog)
+        Examples:
+
+            "4A(G1)"  -> "4A"
+            "4A (G1)" -> "4A"
+            "5"       -> "5"
+        """
+        sem = (self.semester or "").strip()
+        stripped, _ = _extract_group(sem)
+        return stripped
 
     # -----------------------------------------------------------------------
     # Base section
@@ -311,23 +321,32 @@ class CourseOffering:
     @property
     def base_section(self) -> str:
         """
-        Return the parent class/section independent of subgroup.
+        Return the parent class/section independent of subgroup -- and
+        independent of WHICH column (Programme or Semester) the group
+        marker was written in, so a class stays one section whichever
+        convention the register uses.
 
         This is the identifier used by the timetable solver to detect
         conflicts between shared lectures and group-specific practicals.
 
-        Example:
+        Example (marker in Programme):
 
             B.Tech CSE B(G1), semester 5
+                -> B.Tech CSE B - 5 Sem
+
+        Example (marker in Semester):
+
+            B.Tech CSE B, semester 5(G1)
                 -> B.Tech CSE B - 5 Sem
 
             B.Tech CSE B, semester 5
                 -> B.Tech CSE B - 5 Sem
 
-        Therefore the solver understands that G1 belongs to CSE B.
+        Therefore the solver understands that G1 belongs to CSE B, section 5,
+        no matter which column the register put the marker in.
         """
 
-        sem = (self.semester or "").strip()
+        sem = self.base_semester
 
         if sem:
             return f"{self.base_programme} - {sem} Sem"
@@ -360,7 +379,7 @@ class CourseOffering:
                 -> actual schedulable unit
         """
 
-        sem = (self.semester or "").strip()
+        sem = self.base_semester
 
         if self.group:
             label = f"{self.base_programme} ({self.group})"
