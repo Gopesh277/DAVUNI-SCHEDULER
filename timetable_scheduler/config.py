@@ -48,8 +48,9 @@ PERIODS = [
     Period(2, "10:30-11:30"),
     Period(3, "11:30-12:30"),
     Period(4, "12:30-1:30"),
-    Period(5, "2:30-3:30"),
-    Period(6, "3:30-4:30"),
+    Period(5, "1:30-2:30"),
+    Period(6, "2:30-3:30"),
+    Period(7, "3:30-4:30"),
 ]
 PERIODS_PER_DAY = len(PERIODS)
 
