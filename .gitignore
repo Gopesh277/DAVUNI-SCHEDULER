@@ -80,3 +80,6 @@ pnpm-debug.log*
 
 # Runtime app state (regenerated on first launch, never seeded with data)
 backend/data/app_state.json
+
+# Keep the Docker env template
+!.env.example

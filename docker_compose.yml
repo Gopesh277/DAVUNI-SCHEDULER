@@ -1,0 +1,20 @@
+services:
+  scheduler:
+    build: .
+    image: davuni-scheduler:latest
+    container_name: davuni-scheduler
+    ports:
+      - "8000:8000"
+    environment:
+      # Set real values in a .env file next to this one (see .env.example)
+      APP_USERNAME: ${APP_USERNAME:-admin}
+      APP_PASSWORD: ${APP_PASSWORD:-admin123}
+      # "false" is needed when serving over plain http on anything other than
+      # localhost. Set to "true" once TLS sits in front (reverse proxy).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - scheduler-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  scheduler-data:
