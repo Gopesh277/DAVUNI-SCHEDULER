@@ -6,6 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Default login. Change these two lines to set your own defaults, or override
+# at run time with -e APP_USERNAME=... -e APP_PASSWORD=...
+ENV APP_USERNAME=admin \
+    APP_PASSWORD=admin123 \
+    COOKIE_SECURE=false
+
 WORKDIR /app
 
 # Dependencies first so this layer is cached across code changes
