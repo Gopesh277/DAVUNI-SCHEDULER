@@ -429,6 +429,16 @@ def get_schedule():
     return _result_to_dict(store.last_result)
 
 
+@app.delete("/api/schedule")
+def reset_schedule():
+    """Reset the board: discard the generated timetable (including any
+    manual drag-and-drop placements) AND wipe the teaching-load register.
+    Rooms/days/periods and solver settings are left untouched."""
+    store.last_result = None
+    store.set_courses([])
+    return {"ok": True}
+
+
 @app.post("/api/schedule/place")
 def place_schedule_session(req: PlaceRequest):
     """Drag-and-drop: place one currently-unplaced session onto a specific

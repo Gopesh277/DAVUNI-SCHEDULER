@@ -722,6 +722,35 @@ async function regenerate() {
 }
 document.getElementById("regenBtn").addEventListener("click", regenerate);
 
+// =====================================================================
+// Reset board -- clears the generated timetable (and any manual
+// placements) AND wipes the teaching-load register. Rooms/days/periods
+// and solver settings are kept.
+// =====================================================================
+document.getElementById("resetBtn").addEventListener("click", async () => {
+  if (!schedule && courses.length === 0) {
+    notice("info", "The board is already empty.");
+    return;
+  }
+  if (!confirm("Reset the board?\n\nThis will permanently delete the current teaching-load register (all course rows) and the generated timetable, including any sessions you placed by hand.\n\nYour rooms, days, periods and solver settings are kept. You'll need to upload a register again to build a new timetable.")) return;
+  const btn = document.getElementById("resetBtn");
+  setBusy(btn, true, "Clearing…");
+  try {
+    await api("/schedule", { method: "DELETE" });
+    schedule = null;
+    courses = [];
+    diagnostics = null;
+    renderEditor();
+    document.getElementById("genMeta").textContent = "no register loaded";
+    renderAllViews();
+    notice("info", `<b>Board reset.</b> The register and timetable have been cleared. Upload a <code>.xlsx</code>/<code>.csv</code> register with "↑ Load teaching-load file" or add rows under Manage data to start again.`);
+  } catch (e) {
+    notice("err", `<b>Couldn't reset the board.</b> ${e.message}`);
+  } finally {
+    setBusy(btn, false, "✕ Reset board");
+  }
+});
+
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
   window.location.href = "/login.html";

@@ -106,6 +106,7 @@ body{
 .btn-primary:hover:not(:disabled){background:#DBB84A;}
 .btn-ghost{background:rgba(255,255,255,0.09); color:var(--white); border:1px solid rgba(255,255,255,0.2);}
 .btn-ghost:hover:not(:disabled){background:rgba(255,255,255,0.16);}
+.btn-reset:hover:not(:disabled){background:rgba(200,50,50,0.35); border-color:rgba(255,150,150,0.6);}
 .panel .btn-ghost{background:var(--paper-dim); color:var(--ink); border:1px solid var(--line);}
 .panel .btn-ghost:hover:not(:disabled){background:#E9DEBB;}
 .file-input{display:none;}
