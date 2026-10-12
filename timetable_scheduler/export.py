@@ -90,7 +90,8 @@ def _group_starts(placed: list[PlacedSession]):
     return g
 
 
-def export_workbook(result: ScheduleResult, path: str) -> None:
+def export_workbook(result: ScheduleResult, path: str,
+                    department_name: str = "Department of Computer Science & Engineering") -> None:
     config = result.config
     days, periods, rooms = config.days, config.periods, config.rooms
 
@@ -100,7 +101,7 @@ def export_workbook(result: ScheduleResult, path: str) -> None:
 
     def _write_letterhead(ws, span_cols: int):
         ws.cell(row=1, column=1, value="DAV UNIVERSITY, JALANDHAR").font = title_font
-        ws.cell(row=2, column=1, value="Department of Computer Science & Engineering — Timetable Management System").font = subtitle_font
+        ws.cell(row=2, column=1, value=f"{department_name} — Timetable Management System").font = subtitle_font
         return 4  # first free row after the letterhead
 
     # ---------------- Master sheet -----------------------------------

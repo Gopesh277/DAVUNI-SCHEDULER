@@ -51,6 +51,7 @@ class GenerateRequest(BaseModel):
 
 
 class LoginIn(BaseModel):
+    department: str = ""   # not needed for the dean login
     username: str
     password: str
 

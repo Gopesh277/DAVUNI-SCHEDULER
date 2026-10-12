@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DAV University: CSE Timetable Management System</title>
-<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<title>DAV University · Timetable Management System</title>
+<link rel="icon" href="assets/logo.jpg" type="image/jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,10 +16,10 @@
 <header class="letterhead">
   <div class="letterhead-inner">
     <div class="letterhead-brand">
-      <img src="assets/logo.svg" alt="DAV University crest" class="crest" id="crestImg">
+      <img src="assets/logo.jpg" alt="DAV University crest" class="crest" id="crestImg">
       <div class="brand-text">
         <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
-        <h1 class="dept-name">Department of Computer Science &amp; Engineering</h1>
+        <h1 class="dept-name" id="deptHeading">&nbsp;</h1>
         <p class="sys-name">Constraint-Based University Timetable Optimization System</p>
       </div>
     </div>
@@ -185,7 +185,7 @@
 
       <div class="settings-card">
         <h3>Letterhead</h3>
-        <p class="settings-note">Have the official university crest as an image file? Replace <code>frontend/assets/logo.svg</code> (or point it at a .png/.jpg of the same name pattern) and it appears here and on the exported workbook's title.</p>
+        <p class="settings-note">Have the official university crest as an image file? Replace <code>frontend/assets/logo.jpg</code> with it and it appears on the sign-in page and in the header.</p>
       </div>
     </div>
 
@@ -195,7 +195,28 @@
     </div>
   </div>
 
-  <footer>DAV University, Jalandhar · Dept. of CSE · Mon–Sat · Made by- Gopesh Aggarwal</footer>
+  <footer>DAV University, Jalandhar · <span id="footDept">Dept.</span> · Mon–Sat · Made by- Gopesh Aggarwal</footer>
+</div>
+
+<!-- ================= FIRST-TIME ROOM SETUP (non-CSE departments) ================= -->
+<div class="modal-backdrop" id="roomSetupModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="roomSetupTitle">
+  <div class="modal-card">
+    <p class="board-eyebrow">First-time setup</p>
+    <h2 id="roomSetupTitle" class="modal-title">Add your rooms</h2>
+    <p class="modal-sub" id="roomSetupSub">Tell us the rooms your department can use for classes. You can change them any time under Settings.</p>
+    <div id="roomSetupError" class="notice err" style="display:none; margin-bottom:12px;"></div>
+
+    <label class="modal-label" for="setupRooms">Rooms <span class="hint">one per line, or separated by commas</span></label>
+    <textarea id="setupRooms" class="textarea" rows="6" placeholder="e.g.&#10;101&#10;102&#10;Lab-1"></textarea>
+
+    <label class="modal-label" for="setupLabs">Lab rooms <span class="hint">optional — only for practicals. Leave blank if every room can host practicals</span></label>
+    <textarea id="setupLabs" class="textarea" rows="3" placeholder="e.g.&#10;Lab-1"></textarea>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost modal-ghost" id="roomSetupSignOut" type="button">Sign out</button>
+      <button class="btn btn-primary" id="roomSetupSave" type="button">Save rooms &amp; continue</button>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>

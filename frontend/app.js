@@ -6,6 +6,7 @@ let courses = [];           // current register rows (with row_id)
 let editRows = [];          // working copy for the editor
 let schedule = null;        // last /api/generate or /api/schedule response
 let diagnostics = null;     // last /api/courses/upload|api/analyze "diagnostics" block
+let department = null;      // { id, name, short, display } of the signed-in department
 
 // =====================================================================
 // fetch helpers
@@ -756,12 +757,75 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   window.location.href = "/login.html";
 });
 
+// =====================================================================
+// Department display + first-time room setup
+// =====================================================================
+function applyDepartment(d) {
+  if (!d) return;
+  department = d;
+  document.getElementById("deptHeading").textContent = d.display;   // e.g. "Department of Civil Engineering"
+  document.getElementById("footDept").textContent = `Dept. of ${d.short}`;
+  document.title = `DAV University · ${d.short} Timetable Management System`;
+}
+
+// "101, 102\nLab-1" -> ["101", "102", "Lab-1"] (trimmed, de-duplicated, order kept)
+function parseRoomList(text) {
+  const seen = new Set();
+  return (text || "").split(/[\n,]+/).map(x => x.trim()).filter(x => x && !seen.has(x) && seen.add(x));
+}
+
+function openRoomSetup() {
+  document.getElementById("roomSetupSub").textContent =
+    `${department ? department.display : "Your department"} has no rooms yet. Add the rooms it can use for classes — you can change them any time under Settings.`;
+  document.getElementById("roomSetupError").style.display = "none";
+  document.getElementById("roomSetupModal").style.display = "flex";
+  document.getElementById("setupRooms").focus();
+}
+
+document.getElementById("roomSetupSignOut").addEventListener("click", () => document.getElementById("logoutBtn").click());
+
+document.getElementById("roomSetupSave").addEventListener("click", async () => {
+  const errBox = document.getElementById("roomSetupError");
+  const showErr = (m) => { errBox.innerHTML = `<span>✕</span><div>${m}</div>`; errBox.style.display = "flex"; };
+  errBox.style.display = "none";
+
+  const rooms = parseRoomList(document.getElementById("setupRooms").value);
+  const labs = parseRoomList(document.getElementById("setupLabs").value);
+  if (rooms.length === 0) return showErr("Please add at least one room.");
+  const unknown = labs.filter(l => !rooms.includes(l));
+  if (unknown.length) return showErr(`Lab room${unknown.length > 1 ? "s" : ""} <b>${unknown.join(", ")}</b> ${unknown.length > 1 ? "are" : "is"} not in the rooms list. Add ${unknown.length > 1 ? "them" : "it"} to Rooms first.`);
+
+  const btn = document.getElementById("roomSetupSave");
+  setBusy(btn, true, "Saving…");
+  try {
+    // keep the department's existing days/periods/rules; only the rooms change
+    const res = await putJSON("/config", { ...cfg, rooms, lab_rooms: labs.length ? labs : rooms });
+    cfg = res.config;
+    document.getElementById("roomSetupModal").style.display = "none";
+    await init();
+    notice("ok", `<b>${rooms.length} room${rooms.length > 1 ? "s" : ""} saved.</b> Now load your teaching-load register with "↑ Load teaching-load file" to build the timetable.`);
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    setBusy(btn, false, "Save rooms &amp; continue");
+  }
+});
+
 async function init() {
-  const [configRes, coursesRes] = await Promise.all([getJSON("/config"), getJSON("/courses")]);
+  const [me, configRes, coursesRes] = await Promise.all([getJSON("/me"), getJSON("/config"), getJSON("/courses")]);
+  applyDepartment(me.department || configRes.department);
   cfg = configRes.config;
   solverSettings = configRes.solver_settings;
   courses = coursesRes.courses;
   renderStats();
+
+  if (!configRes.rooms_configured) {
+    // A department other than CSE signing in for the first time: it has no
+    // rooms yet, so ask for them before anything else is shown or solved.
+    document.getElementById("genMeta").textContent = "rooms not set up yet";
+    openRoomSetup();
+    return;
+  }
 
   if (courses.length === 0) {
     // Fresh install / empty register -- show the honest zero state and

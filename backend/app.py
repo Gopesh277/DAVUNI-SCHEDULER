@@ -4,6 +4,7 @@ import io
 import tempfile
 import threading
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
@@ -18,11 +19,12 @@ from timetable_scheduler import (
     validate_offerings, detect_duplicate_offerings, preflight_capacity,
     PlacementError, place_session, unplace_session, move_session,
 )
-from . import auth
+from . import auth, departments, dean
+from . import store as store_mod
 from .schemas import CourseIn, ConfigIn, SolverSettingsIn, GenerateRequest, LoginIn, PlaceRequest, MoveRequest, UnplaceRequest
 from .store import store
 
-app = FastAPI(title="DAV CSE Timetable API")
+app = FastAPI(title="DAV University Timetable API")
 
 # No CORSMiddleware: the frontend is served by this same app (see the
 # StaticFiles mount below), so browser requests are same-origin and don't
@@ -31,7 +33,7 @@ app = FastAPI(title="DAV CSE Timetable API")
 
 # API paths reachable without a session -- everything else under /api/
 # requires a valid login.
-PUBLIC_API_PATHS = {"/api/login", "/api/logout", "/api/me", "/api/health"}
+PUBLIC_API_PATHS = {"/api/login", "/api/logout", "/api/me", "/api/health", "/api/departments"}
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB -- a teaching-load register is a
                                      # few hundred rows at most; this just
@@ -48,19 +50,41 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         token = request.cookies.get(auth.SESSION_COOKIE)
-        authed = auth.is_valid_session(token)
+        info = auth.session_info(token)
+        role = info["role"] if info else None
+        dept_id = info["dept"] if info else None
+        if role == auth.ROLE_DEPT and not departments.exists(dept_id):
+            info = role = dept_id = None  # department was removed from departments.json
+        authed = info is not None
+        if role == auth.ROLE_DEPT:
+            # every route handler's `store` now resolves to this department
+            store_mod.set_current_department(dept_id)
 
         if path.startswith("/api/"):
-            if path not in PUBLIC_API_PATHS and not authed:
-                return JSONResponse({"detail": "Not authenticated."}, status_code=401)
+            if path not in PUBLIC_API_PATHS:
+                if not authed:
+                    return JSONResponse({"detail": "Not authenticated."}, status_code=401)
+                # the two portals are walled off from each other
+                if path.startswith("/api/dean/") and role != auth.ROLE_DEAN:
+                    return JSONResponse({"detail": "This area is for the Dean's Office only."}, status_code=403)
+                if not path.startswith("/api/dean/") and role == auth.ROLE_DEAN:
+                    return JSONResponse({"detail": "The Dean's portal cannot use department routes."}, status_code=403)
         elif path in ("/", "/index.html"):
             if not authed:
                 return RedirectResponse(url="/login.html")
+            if role == auth.ROLE_DEAN:
+                return RedirectResponse(url="/dean.html")
+        elif path == "/dean.html":
+            if not authed:
+                return RedirectResponse(url="/login.html")
+            if role != auth.ROLE_DEAN:
+                return RedirectResponse(url="/")
 
         return await call_next(request)
 
 
 app.add_middleware(AuthMiddleware)
+app.include_router(dean.router)   # Dean's Office portal API (/api/dean/*), registered before the static mount
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -113,7 +137,18 @@ class _GenerateCoordinator:
         return self._response
 
 
-_generate_coordinator = _GenerateCoordinator()
+_coordinators: dict[str, _GenerateCoordinator] = {}
+_coordinators_lock = threading.Lock()
+
+
+def _generate_coordinator_for_current_dept() -> _GenerateCoordinator:
+    """One coordinator per department, so one department's solve is never
+    mistaken for (or handed to) another department's request."""
+    dept = store_mod.current_department_id()
+    with _coordinators_lock:
+        if dept not in _coordinators:
+            _coordinators[dept] = _GenerateCoordinator()
+        return _coordinators[dept]
 
 
 # =====================================================================
@@ -264,25 +299,67 @@ def _result_to_dict(result) -> dict:
     }
 
 
+def _publish_snapshot(result_dict: dict) -> None:
+    """Save the department's latest timetable so the Dean's portal can load
+    it (and it survives a restart). Best-effort: never fails a request."""
+    try:
+        dept = departments.get(store_mod.current_department_id())
+        snap = dict(result_dict)
+        snap["department"] = dept
+        snap["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        store.save_snapshot(snap)
+    except Exception:
+        pass
+
+
+def _result_response() -> dict:
+    """Current timetable as JSON for the API, republishing the snapshot
+    (used after manual place/move/unplace edits)."""
+    d = _result_to_dict(store.last_result)
+    _publish_snapshot(d)
+    return d
+
+
 # =====================================================================
 # Auth
 # =====================================================================
+@app.get("/api/departments")
+def list_departments():
+    return {"departments": departments.list_departments()}
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        auth.SESSION_COOKIE, token,
+        httponly=True, secure=auth.COOKIE_SECURE, samesite="lax", max_age=auth.SESSION_TTL_SECONDS, path="/",
+    )
+
+
 @app.post("/api/login")
 def login(payload: LoginIn, request: Request, response: Response):
     client_ip = request.client.host if request.client else "unknown"
     allowed, retry_after = auth.check_rate_limit(client_ip)
     if not allowed:
         raise HTTPException(429, f"Too many failed login attempts. Try again in {retry_after}s.")
-    if not auth.verify_credentials(payload.username, payload.password):
+
+    # The Dean's Office signs in with its own reserved username; no department needed.
+    if auth.is_dean_username(payload.username):
+        if not auth.verify_dean(payload.username, payload.password):
+            auth.record_failed_attempt(client_ip)
+            raise HTTPException(401, "Invalid username or password.")
+        auth.clear_failed_attempts(client_ip)
+        _set_session_cookie(response, auth.create_session(None, role=auth.ROLE_DEAN))
+        return {"ok": True, "role": auth.ROLE_DEAN, "username": auth.DEAN_USERNAME, "department": None, "redirect": "/dean.html"}
+
+    dept = departments.get(payload.department)
+    if dept is None:
+        raise HTTPException(400, "Please select your department.")
+    if not auth.verify_credentials(payload.username, payload.password, dept["id"]):
         auth.record_failed_attempt(client_ip)
         raise HTTPException(401, "Invalid username or password.")
     auth.clear_failed_attempts(client_ip)
-    token = auth.create_session()
-    response.set_cookie(
-        auth.SESSION_COOKIE, token,
-        httponly=True, secure=auth.COOKIE_SECURE, samesite="lax", max_age=auth.SESSION_TTL_SECONDS, path="/",
-    )
-    return {"ok": True, "username": auth.APP_USERNAME}
+    _set_session_cookie(response, auth.create_session(dept["id"]))
+    return {"ok": True, "role": auth.ROLE_DEPT, "username": payload.username.strip(), "department": dept, "redirect": "/"}
 
 
 @app.post("/api/logout")
@@ -294,8 +371,18 @@ def logout(request: Request, response: Response):
 
 @app.get("/api/me")
 def me(request: Request):
-    authed = auth.is_valid_session(request.cookies.get(auth.SESSION_COOKIE))
-    return {"authenticated": authed, "username": auth.APP_USERNAME if authed else None}
+    info = auth.session_info(request.cookies.get(auth.SESSION_COOKIE))
+    if info and info["role"] == auth.ROLE_DEAN:
+        return {"authenticated": True, "role": auth.ROLE_DEAN, "username": auth.DEAN_USERNAME,
+                "department": None, "display": "Dean's Office"}
+    dept = departments.get(info["dept"]) if info else None
+    authed = dept is not None
+    return {
+        "authenticated": authed,
+        "role": auth.ROLE_DEPT if authed else None,
+        "username": auth.APP_USERNAME if authed else None,
+        "department": dept,
+    }
 
 
 # =====================================================================
@@ -306,6 +393,8 @@ def get_config():
     return {
         "config": _config_to_dict(store.config),
         "solver_settings": store.solver_settings,
+        "rooms_configured": store.rooms_configured,
+        "department": departments.get(store_mod.current_department_id()),
     }
 
 
@@ -374,6 +463,8 @@ async def upload_courses(file: UploadFile = File(...)):
 
 @app.get("/api/analyze")
 def analyze_courses():
+    if not store.rooms_configured:
+        raise HTTPException(400, "No rooms set up for this department yet. Add your rooms first (Settings → Rooms).")
     """Pre-solve diagnostics: row-level validation, duplicate-row report,
     and resource-aware capacity pre-flight (faculty/room/lab/section
     demand vs. capacity) for the currently loaded register and config --
@@ -393,6 +484,8 @@ def analyze_courses():
 # =====================================================================
 @app.post("/api/generate")
 def generate(req: GenerateRequest = GenerateRequest()):
+    if not store.rooms_configured:
+        raise HTTPException(400, "No rooms set up for this department yet. Add your rooms first (Settings → Rooms).")
     if not store.courses:
         raise HTTPException(400, "No courses loaded. Upload a teaching-load file first.")
 
@@ -416,10 +509,11 @@ def generate(req: GenerateRequest = GenerateRequest()):
         )
         store.last_result = result
         response = _result_to_dict(result)
+        _publish_snapshot(response)
         response["capacity"] = capacity
         return response
 
-    return _generate_coordinator.run(_solve)
+    return _generate_coordinator_for_current_dept().run(_solve)
 
 
 @app.get("/api/schedule")
@@ -435,6 +529,7 @@ def reset_schedule():
     manual drag-and-drop placements) AND wipe the teaching-load register.
     Rooms/days/periods and solver settings are left untouched."""
     store.last_result = None
+    store.clear_snapshot()
     store.set_courses([])
     return {"ok": True}
 
@@ -453,7 +548,7 @@ def place_schedule_session(req: PlaceRequest):
         )
     except PlacementError as e:
         raise HTTPException(409, str(e))
-    return _result_to_dict(store.last_result)
+    return _result_response()
 
 
 @app.post("/api/schedule/move")
@@ -468,7 +563,7 @@ def move_schedule_session(req: MoveRequest):
         )
     except PlacementError as e:
         raise HTTPException(409, str(e))
-    return _result_to_dict(store.last_result)
+    return _result_response()
 
 
 @app.post("/api/schedule/unplace")
@@ -480,7 +575,7 @@ def unplace_schedule_session(req: UnplaceRequest):
         store.last_result = unplace_session(store.last_result, req.session_id)
     except PlacementError as e:
         raise HTTPException(409, str(e))
-    return _result_to_dict(store.last_result)
+    return _result_response()
 
 
 @app.get("/api/schedule/download")
@@ -488,17 +583,19 @@ def download_schedule():
     if store.last_result is None:
         raise HTTPException(404, "No schedule generated yet. POST /api/generate first.")
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        export_workbook(store.last_result, tmp.name)
+        dept = departments.get(store_mod.current_department_id()) or {}
+        export_workbook(store.last_result, tmp.name,
+                        department_name=dept.get("display", "Department of Computer Science & Engineering"))
         path = tmp.name
     return FileResponse(
-        path, filename="timetable.xlsx",
+        path, filename=f"timetable_{dept.get('id', 'dept')}.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "courses_loaded": len(store.courses), "has_schedule": store.last_result is not None}
+    return {"ok": True}
 
 
 # =====================================================================

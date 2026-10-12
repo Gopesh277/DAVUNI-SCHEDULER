@@ -300,3 +300,20 @@ footer{margin-top:36px; text-align:center; font-family:'JetBrains Mono', monospa
   .board-title{font-size:21px;}
   .dept-name{font-size:19px;}
 }
+
+/* ================= ROOM SETUP MODAL ================= */
+.modal-backdrop{
+  position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
+  background:rgba(36,23,18,0.62); padding:20px; overflow-y:auto;
+}
+.modal-card{
+  width:100%; max-width:480px; background:var(--white); border:1px solid var(--line); border-radius:14px;
+  padding:24px 24px 20px; box-shadow:0 24px 60px -20px rgba(69,11,21,0.6);
+}
+.modal-title{font-family:'Fraunces', serif; font-weight:600; font-size:22px; margin:2px 0 6px; color:var(--maroon-deep);}
+.modal-sub{color:var(--ink-soft); font-size:13.5px; line-height:1.5; margin:0 0 14px;}
+.modal-label{display:block; font-weight:600; font-size:13px; margin:12px 0 6px; color:var(--ink);}
+.modal-label .hint{font-weight:400; color:var(--ink-soft); font-size:12px; margin-left:4px;}
+.modal-actions{display:flex; justify-content:space-between; gap:10px; margin-top:18px;}
+.modal-ghost,.modal-ghost:hover:not(:disabled){background:var(--paper-dim); color:var(--maroon-deep); border:1px solid var(--line);}
+.modal-card .board-eyebrow{color:var(--maroon);}

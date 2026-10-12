@@ -1,0 +1,34 @@
+services:
+  scheduler:
+    build: .
+    image: davuni-scheduler:latest
+    container_name: davuni-scheduler
+    ports:
+      - "8000:8000"
+    # Optional .env file (copy .env.example). Besides the shared login it can
+    # hold per-department logins such as APP_PASSWORD_CIVIL. Needs Docker
+    # Compose v2.24+ for "required: false"; on older versions create a .env
+    # file first (it can be empty).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_USERNAME: ${APP_USERNAME:-admin}
+      APP_PASSWORD: ${APP_PASSWORD:-admin123}
+      # "false" is needed when serving over plain http on anything other than
+      # localhost. Set to "true" once TLS sits in front (reverse proxy).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Dean's Office portal login
+      DEAN_USERNAME: ${DEAN_USERNAME:-dean}
+      DEAN_PASSWORD: ${DEAN_PASSWORD:-dean_admin123}
+    volumes:
+      # every department's rooms, register and settings (dept_<id>.json)
+      - scheduler-data:/app/backend/data
+      # Optional: edit the department list without rebuilding the image.
+      # Create/keep a real backend/departments.json file first, then
+      # uncomment, and restart the container after editing.
+      # - ./backend/departments.json:/app/backend/departments.json:ro
+    restart: unless-stopped
+
+volumes:
+  scheduler-data:

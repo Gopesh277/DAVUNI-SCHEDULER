@@ -195,3 +195,39 @@ sample_data/
   teaching_load24252updated.xlsx
 requirements.txt
 ```
+
+
+## Multiple departments
+
+The sign-in page asks for a **department** as well as the username and password. After signing in, the
+header shows that department's name (e.g. "Department of Civil Engineering"), and everything — register,
+rooms, settings, generated timetable and the Excel download — belongs to that department only.
+
+- **CSE** ships with its 12 real rooms already loaded.
+- **Every other department** is asked for its rooms (and which of them are labs) the first time it signs in;
+  they can be edited later under *Settings*. Timetable generation is blocked until rooms exist.
+- The list of departments is `backend/departments.json` (id, name, short label). Add, rename or remove
+  entries there — no code change needed.
+- Each department's data is saved in its own file, `backend/data/dept_<id>.json`. An existing single-department
+  `app_state.json` is migrated into `dept_cse.json` automatically on first start.
+- All departments share `APP_USERNAME` / `APP_PASSWORD` by default. To give a department its own login, set
+  `APP_USERNAME_<ID>` and/or `APP_PASSWORD_<ID>` (e.g. `APP_PASSWORD_CIVIL=...`).
+
+## Dean's Office portal
+
+Signing in with the dean credentials (default `dean` / `dean_admin123` — set `DEAN_USERNAME` /
+`DEAN_PASSWORD` to change them; no department needs to be chosen) opens a separate, **read-only** portal
+at `/dean.html`:
+
+- **Department timetables** — load any department's most recently generated timetable and browse it
+  teacher-wise, room-wise or section-wise.
+- **Meeting availability** — pick several faculty (from any departments), a day and a time. The portal shows
+  who is free, and for anyone busy, exactly where they are (room, course, section, department) and when they
+  are free again. A week grid and "suggested windows" show when the whole group is free together, and
+  **Where are they right now?** uses today's day and the current time.
+
+How it works: each department saves a copy of its timetable (`backend/data/schedule_<id>.json`) whenever it
+generates or edits one; the dean portal only reads those copies. Faculty are matched across departments by
+name (case-insensitive, "Dr."/"Prof." ignored), and times are compared as clock times, so departments may use
+their own period timings. Availability reflects teaching commitments only. The dean and department portals are
+walled off from each other, and the username `dean` is reserved.

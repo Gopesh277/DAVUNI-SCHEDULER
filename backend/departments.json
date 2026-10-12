@@ -1,0 +1,14 @@
+[
+  {"id": "cse",        "name": "Computer Science & Engineering",  "short": "CSE"},
+  {"id": "csa",        "name": "Computer Science & Applications", "short": "CSA"},
+  {"id": "civil",      "name": "Civil Engineering",               "short": "Civil"},
+  {"id": "mech",       "name": "Mechanical Engineering",          "short": "Mech"},
+  {"id": "commerce",   "name": "Commerce & Management & Economics",           "short": "Commerce"},
+  {"id": "agriculture","name": "Agriculture",                     "short": "Agriculture"},
+  {"id": "masscomm",   "name": "Mass Communication",              "short": "Mass Comm"},
+  {"id": "chemistry",  "name": "Chemistry",                       "short": "Chemistry"},
+  {"id": "pharmacy",   "name": "Pharmaceutical Sciences",         "short": "Pharmacy"},
+  {"id": "law",        "name": "Law",                             "short": "Law"},
+  {"id": "languages",  "name": "Languages",                       "short": "Languages"},
+  {"id": "physed",     "name": "Physical Education",              "short": "Phys. Ed."}
+]

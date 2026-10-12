@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dean's Office · DAV University Timetable Portal</title>
+<link rel="icon" href="assets/logo.jpg" type="image/jpeg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="dean.css">
+</head>
+<body>
+
+<header class="letterhead">
+  <div class="letterhead-inner">
+    <div class="letterhead-brand">
+      <img src="assets/logo.jpg" alt="DAV University crest" class="crest">
+      <div class="brand-text">
+        <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+        <h1 class="dept-name">Dean's Office</h1>
+        <p class="sys-name">Timetable Overview · All Departments</p>
+      </div>
+    </div>
+    <div class="letterhead-motto">
+      <p class="motto-hindi">असतो मा सद्गमय</p>
+      <p class="motto-en">"Lead us from darkness to light"</p>
+      <button class="logout-link" id="logoutBtn" type="button">Sign out</button>
+    </div>
+  </div>
+  <div class="letterhead-rule"></div>
+</header>
+
+<div class="app">
+
+  <div class="board">
+    <div class="board-top">
+      <div>
+        <p class="board-eyebrow">Dean's portal · Read-only</p>
+        <h2 class="board-title">All Departments at a Glance</h2>
+        <p class="board-sub">Open any department's latest generated timetable, or pick several faculty to see when they are all free for a meeting — and where they are right now if they are not.</p>
+      </div>
+      <div class="board-stats" id="deanStats"></div>
+    </div>
+  </div>
+
+  <div class="tabs" id="deanTabs">
+    <div class="tab active" data-tab="tt">Department timetables</div>
+    <div class="tab" data-tab="meet">Meeting availability</div>
+  </div>
+
+  <div id="deanNotice"></div>
+
+  <!-- ================= DEPARTMENT TIMETABLES ================= -->
+  <div class="panel active" id="panel-tt">
+    <div class="section-head"><h2>Load a department's timetable</h2><span class="hint">Shows the department's most recently generated timetable</span></div>
+    <div class="controls">
+      <select id="deptSelect"></select>
+      <button class="btn btn-primary" id="loadTtBtn">Load timetable</button>
+      <span class="pill" id="ttMeta"></span>
+    </div>
+    <div id="ttBody" style="display:none;">
+      <div class="dean-chips" id="ttChips"></div>
+      <div class="controls">
+        <div class="seg" id="viewSeg">
+          <button type="button" data-view="teacher" class="active">Teacher-wise</button>
+          <button type="button" data-view="room">Room-wise</button>
+          <button type="button" data-view="section">Section-wise</button>
+        </div>
+        <select id="entitySelect"></select>
+        <span class="pill" id="entityPill"></span>
+      </div>
+      <div class="grid-wrap"><div id="ttGridHost"></div></div>
+      <div id="ttUnplaced"></div>
+    </div>
+    <div id="ttEmpty" class="dean-empty">Choose a department above to see its timetable.</div>
+  </div>
+
+  <!-- ================= MEETING AVAILABILITY ================= -->
+  <div class="panel" id="panel-meet">
+    <div class="section-head"><h2>Faculty availability for a meeting</h2><span class="hint">Faculty from any department · matched by name across departments</span></div>
+
+    <div class="meet-grid">
+      <div class="meet-card">
+        <h3>1 · Pick faculty</h3>
+        <div class="controls" style="margin-bottom:8px;">
+          <input type="text" id="facSearch" class="textbox" placeholder="Search by name…" style="flex:1; min-width:140px;">
+          <select id="facDept"><option value="">All departments</option></select>
+        </div>
+        <div class="fac-list" id="facList"></div>
+        <div class="fac-actions">
+          <button type="button" class="link-btn" id="facSelectShown">Select all shown</button>
+          <button type="button" class="link-btn" id="facClear">Clear</button>
+        </div>
+        <div class="chip-row" id="facChips"></div>
+      </div>
+
+      <div class="meet-card">
+        <h3>2 · Pick the time</h3>
+        <div class="when-row">
+          <label>Day<select id="whenDay"></select></label>
+          <label>From<input type="time" id="whenStart" class="textbox" value="10:30"></label>
+          <label>To<input type="time" id="whenEnd" class="textbox" value="11:30"></label>
+        </div>
+        <div class="controls" style="margin-top:12px;">
+          <button class="btn btn-primary" id="checkBtn">Check availability</button>
+          <button class="btn btn-ghost" id="nowBtn" title="Use today's day and the current time">📍 Where are they right now?</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0; font-size:12px; color:var(--ink-soft);">Availability is based on the generated timetables only — it shows teaching commitments, not other engagements.</p>
+      </div>
+    </div>
+
+    <div id="meetResult"></div>
+  </div>
+
+</div>
+
+<footer class="dean-foot">DAV University, Jalandhar · Dean's Office · Made by- Gopesh Aggarwal</footer>
+<script src="dean.js"></script>
+</body>
+</html>

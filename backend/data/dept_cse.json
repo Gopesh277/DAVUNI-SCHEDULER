@@ -1,0 +1,78 @@
+{
+  "courses": [],
+  "config": {
+    "rooms": [
+      "216",
+      "312",
+      "315",
+      "316",
+      "317",
+      "422",
+      "421",
+      "401",
+      "301",
+      "102",
+      "302",
+      "402"
+    ],
+    "lab_rooms": [
+      "102",
+      "302",
+      "402"
+    ],
+    "days": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ],
+    "periods": [
+      {
+        "index": 1,
+        "label": "9:30-10:30"
+      },
+      {
+        "index": 2,
+        "label": "10:30-11:30"
+      },
+      {
+        "index": 3,
+        "label": "11:30-12:30"
+      },
+      {
+        "index": 4,
+        "label": "12:30-1:30"
+      },
+      {
+        "index": 5,
+        "label": "1:30-2:30"
+      },
+      {
+        "index": 6,
+        "label": "2:30-3:30"
+      },
+      {
+        "index": 7,
+        "label": "3:30-4:30"
+      }
+    ],
+    "day_break_after_period": 4,
+    "practical_block_size": 2,
+    "max_consecutive_periods": 2,
+    "position_daily_caps": {
+      "Regular": 6,
+      "Senior": 5,
+      "Super Senior": 4,
+      "Contractual": 7,
+      "New Faculty": 7
+    },
+    "default_position_daily_cap": 6
+  },
+  "solver_settings": {
+    "time_limit": 150,
+    "workers": 8,
+    "balance": true
+  }
+}
