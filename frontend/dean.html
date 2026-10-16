@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dean's Office · DAV University Timetable Portal</title>
+<title>Dean's Office·DAV University Timetable Portal</title>
 <link rel="icon" href="assets/logo.jpg" type="image/jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
     <div class="letterhead-brand">
       <img src="assets/logo.jpg" alt="DAV University crest" class="crest">
       <div class="brand-text">
-        <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+        <p class="uni-name">DAV UNIVERSITY,JALANDHAR</p>
         <h1 class="dept-name">Dean's Office</h1>
         <p class="sys-name">Timetable Overview · All Departments</p>
       </div>
@@ -56,7 +56,7 @@
   <div class="panel active" id="panel-tt">
     <div class="section-head"><h2>Load a department's timetable</h2><span class="hint">Shows the department's most recently generated timetable</span></div>
     <div class="controls">
-      <select id="deptSelect"></select>
+      <select id="deptSelect" autocomplete="off"></select>
       <button class="btn btn-primary" id="loadTtBtn">Load timetable</button>
       <span class="pill" id="ttMeta"></span>
     </div>
@@ -68,7 +68,7 @@
           <button type="button" data-view="room">Room-wise</button>
           <button type="button" data-view="section">Section-wise</button>
         </div>
-        <select id="entitySelect"></select>
+        <select id="entitySelect" autocomplete="off"></select>
         <span class="pill" id="entityPill"></span>
       </div>
       <div class="grid-wrap"><div id="ttGridHost"></div></div>
@@ -85,8 +85,8 @@
       <div class="meet-card">
         <h3>1 · Pick faculty</h3>
         <div class="controls" style="margin-bottom:8px;">
-          <input type="text" id="facSearch" class="textbox" placeholder="Search by name…" style="flex:1; min-width:140px;">
-          <select id="facDept"><option value="">All departments</option></select>
+          <input type="text" id="facSearch" class="textbox" autocomplete="off" placeholder="Search by name…" style="flex:1; min-width:140px;">
+          <select id="facDept" autocomplete="off"><option value="">All departments</option></select>
         </div>
         <div class="fac-list" id="facList"></div>
         <div class="fac-actions">
@@ -99,15 +99,15 @@
       <div class="meet-card">
         <h3>2 · Pick the time</h3>
         <div class="when-row">
-          <label>Day<select id="whenDay"></select></label>
-          <label>From<input type="time" id="whenStart" class="textbox" value="10:30"></label>
-          <label>To<input type="time" id="whenEnd" class="textbox" value="11:30"></label>
+          <label>Day<select id="whenDay" autocomplete="off"></select></label>
+          <label>From<input type="time" id="whenStart" class="textbox" value="10:30" autocomplete="off"></label>
+          <label>To<input type="time" id="whenEnd" class="textbox" value="11:30" autocomplete="off"></label>
         </div>
         <div class="controls" style="margin-top:12px;">
           <button class="btn btn-primary" id="checkBtn">Check availability</button>
           <button class="btn btn-ghost" id="nowBtn" title="Use today's day and the current time">📍 Where are they right now?</button>
         </div>
-        <p class="hint" style="margin:6px 0 0; font-size:12px; color:var(--ink-soft);">Availability is based on the generated timetables only — it shows teaching commitments, not other engagements.</p>
+        <p class="hint" style="margin:6px 0 0; font-size:12px; color:var(--ink-soft);">Availability is based on the generated timetables only it shows teaching commitments, not other engagements.</p>
       </div>
     </div>
 

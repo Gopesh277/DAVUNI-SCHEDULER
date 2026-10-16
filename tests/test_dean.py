@@ -171,3 +171,35 @@ def test_label_and_name_helpers():
     assert dean.parse_label("Lunch") is None
     assert dean.normalize_name("Dr.  Rahul Hans") == dean.normalize_name("prof.rahul hans") == "rahul hans"
     assert dean.normalize_name("Drew Smith") == "drew smith"
+
+
+# ------------------------------------------------ nothing stale is ever shown
+def test_responses_are_never_cached(client_factory):
+    d = _dean(client_factory)
+    assert d.get("/api/dean/overview").headers["cache-control"] == "no-store"
+    assert d.get("/api/dean/faculty").headers["cache-control"] == "no-store"
+    assert d.get("/dean.html").headers["cache-control"] == "no-store"
+    cse, _ = client_factory("cse")
+    assert cse.get("/api/config").headers["cache-control"] == "no-store"
+
+
+def test_dean_never_sees_a_timetable_that_no_longer_matches_the_department(client_factory):
+    civil, _ = client_factory("civil")
+    d = _dean(client_factory)
+
+    def has_tt():
+        return {x["id"]: x for x in d.get("/api/dean/overview").json()["departments"]}["civil"]["has_timetable"]
+
+    rows = [_row("Dr A", "CE-1", "B.Tech Civil A")]
+    _generate(civil, rows, rooms=["C1", "C2"])
+    assert has_tt()
+
+    civil.put("/api/courses", json=rows + [_row("Dr B", "CE-2", "B.Tech Civil A")])   # register edited -> old timetable is dropped
+    assert not has_tt() and d.get("/api/dean/timetable/civil").status_code == 404
+    assert civil.post("/api/generate", json={"time_limit": 5, "workers": 2, "balance": False}).status_code == 200
+    assert has_tt()                                                                    # regenerated -> visible again
+
+    cfg = civil.get("/api/config").json()["config"]
+    cfg["rooms"] = ["C1", "C2", "C3"]
+    civil.put("/api/config", json=cfg)                                                 # rooms changed -> dropped again
+    assert not has_tt()

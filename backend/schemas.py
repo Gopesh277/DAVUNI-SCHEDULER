@@ -36,9 +36,11 @@ class ConfigIn(BaseModel):
 
 
 class SolverSettingsIn(BaseModel):
-    time_limit: int = Field(60, ge=1, le=600)
-    workers: int = Field(8, ge=1, le=32)
-    balance: bool = True
+    # An omitted field keeps the department's currently saved value -- there
+    # is no hidden default here that could override what the user chose.
+    time_limit: Optional[int] = Field(None, ge=1, le=600)
+    workers: Optional[int] = Field(None, ge=1, le=32)
+    balance: Optional[bool] = None
 
 
 class GenerateRequest(BaseModel):

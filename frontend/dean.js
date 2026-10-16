@@ -4,7 +4,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const res = await fetch(path, { cache: "no-store", headers: { "Content-Type": "application/json" }, ...opts });
   if (res.status === 401) { window.location.href = "/login.html"; throw new Error("Please sign in again."); }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
@@ -26,10 +26,41 @@ const deptList = (arr) => (arr || []).map((d) => d.short).join(", ");
 let overview = [], allFaculty = [], snap = null, view = "teacher";
 const selected = new Set();
 
+// Every time the portal is opened it starts blank: nothing selected, no results, no timetable loaded.
+// (If the browser restores the page from its back/forward cache, reload it instead.)
+window.addEventListener("pageshow", (e) => { if (e.persisted) window.location.reload(); });
+
+function resetPortal() {
+  snap = null; view = "teacher"; selected.clear();
+  document.querySelectorAll("#deanTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.tab === "tt"));
+  $("panel-tt").classList.add("active"); $("panel-meet").classList.remove("active");
+  document.querySelectorAll("#viewSeg button").forEach((x) => x.classList.toggle("active", x.dataset.view === "teacher"));
+  $("ttBody").style.display = "none"; $("ttEmpty").style.display = "block";
+  $("ttEmpty").textContent = "Choose a department above to see its latest timetable.";
+  $("ttMeta").textContent = ""; $("ttChips").innerHTML = ""; $("ttGridHost").innerHTML = ""; $("ttUnplaced").innerHTML = "";
+  $("facSearch").value = ""; $("facDept").value = "";
+  $("whenStart").value = "10:30"; $("whenEnd").value = "11:30";
+  $("whenDay").value = todayName() === "Sunday" ? "Monday" : todayName();
+  $("meetResult").innerHTML = ""; clearNotice();
+  renderChips();
+}
+
+// Re-read the latest data from the server (departments regenerate their timetables at any time).
+async function refreshLists() {
+  const [ov, fac] = await Promise.all([api("/api/dean/overview"), api("/api/dean/faculty")]);
+  overview = ov.departments; allFaculty = fac.faculty;
+  const keep = new Set(allFaculty.map((f) => f.key));
+  [...selected].forEach((k) => { if (!keep.has(k)) selected.delete(k); });   // drop anyone who no longer has a timetable
+  const dept = $("deptSelect").value;
+  renderStats(); renderDeptSelect(); if (dept && overview.some((d) => d.id === dept)) $("deptSelect").value = dept;
+  renderFacDeptFilter(); renderFacList(); renderChips();
+}
+
 // ------------------------------------------------------------------ tabs
 document.querySelectorAll("#deanTabs .tab").forEach((t) => t.addEventListener("click", () => {
   document.querySelectorAll("#deanTabs .tab").forEach((x) => x.classList.toggle("active", x === t));
   ["tt", "meet"].forEach((n) => $("panel-" + n).classList.toggle("active", n === t.dataset.tab));
+  refreshLists().catch((e) => notice("err", esc(e.message)));
 }));
 $("logoutBtn").addEventListener("click", async () => {
   try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
@@ -48,16 +79,15 @@ function renderStats() {
 }
 function renderDeptSelect() {
   const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" }); } catch (e) { return ""; } };
-  $("deptSelect").innerHTML = overview.map((d) =>
+  $("deptSelect").innerHTML = `<option value="" selected disabled>Select a department…</option>` + overview.map((d) =>
     `<option value="${d.id}">${esc(d.display)} — ${d.has_timetable ? "✓ " + when(d.generated_at) : "no timetable yet"}</option>`).join("");
-  const first = overview.find((d) => d.has_timetable);
-  if (first) $("deptSelect").value = first.id;
 }
 
 // ------------------------------------------------------------ timetable viewer
 async function loadTimetable() {
   const id = $("deptSelect").value;
   clearNotice();
+  if (!id) { notice("warn", "Choose a department first."); return; }
   $("loadTtBtn").disabled = true;
   try {
     snap = await api(`/api/dean/timetable/${id}`);
@@ -259,14 +289,16 @@ $("meetResult").addEventListener("click", (e) => {
 // ---------------------------------------------------------------- init
 (async function init() {
   try {
-    const me = await fetch("/api/me").then((r) => r.json());
+    const me = await fetch("/api/me", { cache: "no-store" }).then((r) => r.json());
     if (!me.authenticated) { window.location.replace("/login.html"); return; }
     if (me.role !== "dean") { window.location.replace("/"); return; }
     const [ov, fac] = await Promise.all([api("/api/dean/overview"), api("/api/dean/faculty")]);
     overview = ov.departments; allFaculty = fac.faculty;
-    renderStats(); renderDeptSelect(); renderFacDeptFilter(); renderFacList(); renderChips();
-    if (overview.some((d) => d.has_timetable)) await loadTimetable();
-    else { $("ttEmpty").textContent = "No department has generated a timetable yet. Once a department generates one, it will appear here."; }
+    renderStats(); renderDeptSelect(); renderFacDeptFilter(); renderFacList();
+    resetPortal();   // blank start: nothing selected, nothing loaded
+    if (!overview.some((d) => d.has_timetable)) {
+      $("ttEmpty").textContent = "No department has generated a timetable yet. Once a department generates one, it will appear here.";
+    }
   } catch (e) {
     notice("err", esc(e.message));
   }

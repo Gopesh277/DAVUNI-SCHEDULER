@@ -57,6 +57,8 @@ can't produce a solution within the time budget.
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
@@ -71,6 +73,13 @@ from .sessions import Session
 PHASE1_TIME_FRACTION = 0.65
 PHASE1_MIN_SECONDS = 20
 PHASE1_MAX_SECONDS = 100
+
+# The user's time limit is a hard ceiling for the WHOLE solve. If the full
+# timetable cannot be found, this share of the limit is held back for the
+# best-effort (partial) fallback, so that fallback never has to run past the
+# limit the user chose. (CP-SAT itself cannot run for less than 1 second.)
+STAGE2_RESERVE_FRACTION = 0.20
+MIN_SOLVE_SECONDS = 1.0
 
 # Stage 2 (relaxed) objective weight: maximising scheduled periods must
 # always dominate the load-balance term, whose range is only
@@ -419,12 +428,38 @@ class _ModelContext:
         return [self.schedulable[i] for i in range(len(self.schedulable)) if solver.Value(self.active[i]) == 0]
 
 
-def _solve(ctx: _ModelContext, time_limit: float, num_workers: int, log_progress: bool):
+class SolveCancelled(Exception):
+    """The solve was stopped because a newer request (new settings or new data) replaced it."""
+
+
+def _solve(ctx: _ModelContext, time_limit: float, num_workers: int, log_progress: bool,
+           cancel: threading.Event | None = None):
+    if cancel is not None and cancel.is_set():
+        raise SolveCancelled()
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(1.0, time_limit)
     solver.parameters.num_search_workers = num_workers
     solver.parameters.log_search_progress = log_progress
-    status = solver.Solve(ctx.model)
+
+    done = threading.Event()
+    if cancel is not None:
+        def _watch():
+            # StopSearch only has an effect once Solve() is running, so keep
+            # asking until the solve actually ends.
+            while not done.is_set():
+                if cancel.is_set():
+                    try:
+                        solver.StopSearch()
+                    except Exception:
+                        pass
+                done.wait(0.05)
+        threading.Thread(target=_watch, daemon=True).start()
+    try:
+        status = solver.Solve(ctx.model)
+    finally:
+        done.set()
+    if cancel is not None and cancel.is_set():
+        raise SolveCancelled()
     return solver, status
 
 
@@ -434,6 +469,7 @@ def _solve_relaxed(
     time_limit_seconds: float,
     num_workers: int,
     log_progress: bool,
+    cancel: threading.Event | None = None,
 ) -> ScheduleResult:
     """Stage 2: best-possible (partial) timetable. Sessions are optional;
     the solver maximises how many get scheduled, then balances load."""
@@ -446,7 +482,7 @@ def _solve_relaxed(
                                wall_time_seconds=0.0, config=config)
 
     ctx2.add_relaxed_objective()
-    solver2, status2 = _solve(ctx2, time_limit_seconds, num_workers, log_progress)
+    solver2, status2 = _solve(ctx2, time_limit_seconds, num_workers, log_progress, cancel)
 
     if status2 in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         placed2, _ = ctx2.extract(solver2)
@@ -467,26 +503,43 @@ def build_and_solve(
     num_workers: int = DEFAULT_NUM_WORKERS,
     balance_load: bool = True,
     log_progress: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> ScheduleResult:
+    """Solve the timetable. If cancel_event is set while this runs, the solve
+    stops promptly and SolveCancelled is raised (used when a newer request
+    with different settings or data replaces this one)."""
     config = config or SchedulerConfig.default()
 
     if not sessions:
         return ScheduleResult(status="OPTIMAL", placed=[], unplaced=[], wall_time_seconds=0.0, config=config)
 
+    # The user's time limit covers the whole solve, model building included.
+    started = time.monotonic()
+    limit = max(MIN_SOLVE_SECONDS, float(time_limit_seconds))
+
+    def time_left() -> float:
+        return limit - (time.monotonic() - started)
+
+    # Kept back in case the full timetable can't be found and the
+    # best-effort partial fallback (Stage 2) is needed.
+    reserve = max(MIN_SOLVE_SECONDS, STAGE2_RESERVE_FRACTION * limit)
+
     # ---- Stage 1: hard constraints only, no objective -- fast pass to
     #      get *a* complete valid timetable before spending time
     #      optimizing it. Every schedulable session is mandatory here, so
     #      success means the FULL load fits.
-    phase1_budget = min(PHASE1_MAX_SECONDS, max(PHASE1_MIN_SECONDS, time_limit_seconds * PHASE1_TIME_FRACTION))
-    if not balance_load:
-        phase1_budget = time_limit_seconds  # no phase 2 planned -- use the full budget now
+    if balance_load:
+        phase1_budget = min(PHASE1_MAX_SECONDS, max(PHASE1_MIN_SECONDS, limit * PHASE1_TIME_FRACTION))
+    else:
+        phase1_budget = limit  # no phase 2 planned -- use the whole budget now
+    phase1_budget = max(MIN_SOLVE_SECONDS, min(phase1_budget, limit - reserve))  # never past the user's limit
 
     ctx1 = _ModelContext(sessions, config, relaxed=False)
     total_wall_time = 0.0
     baseline_placed, baseline_starts, baseline_status = None, None, None
 
     if ctx1.schedulable:
-        solver1, status1 = _solve(ctx1, phase1_budget, num_workers, log_progress)
+        solver1, status1 = _solve(ctx1, phase1_budget, num_workers, log_progress, cancel_event)
         total_wall_time += solver1.WallTime()
         if status1 in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             baseline_placed, baseline_starts = ctx1.extract(solver1)
@@ -496,9 +549,9 @@ def build_and_solve(
             # up, spend the rest of the budget on feasibility alone (still
             # a much easier search than with the objective attached) before
             # falling through to Stage 2.
-            remaining_for_retry = max(3.0, time_limit_seconds - total_wall_time)
+            remaining_for_retry = time_left() - reserve
             if remaining_for_retry > 2.0:
-                solver1b, status1b = _solve(ctx1, remaining_for_retry, num_workers, log_progress)
+                solver1b, status1b = _solve(ctx1, remaining_for_retry, num_workers, log_progress, cancel_event)
                 total_wall_time += solver1b.WallTime()
                 if status1b in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     baseline_placed, baseline_starts = ctx1.extract(solver1b)
@@ -514,13 +567,15 @@ def build_and_solve(
         # ---- Phase 2 (still Stage 1): full model with the load-balancing
         #      objective, warm started from the baseline, for the
         #      remaining time.
-        remaining = max(3.0, time_limit_seconds - total_wall_time)
-        ctx1b = _ModelContext(sessions, config, relaxed=False)
-        ctx1b.add_balance_objective()
-        for i, t in baseline_starts.items():
-            ctx1b.model.AddHint(ctx1b.starts[i], t)
-        solver1c, status1c = _solve(ctx1b, remaining, num_workers, log_progress)
-        total_wall_time += solver1c.WallTime()
+        remaining = time_left()
+        status1c = None
+        if remaining >= 2.0:  # too little time left to improve on the baseline -> keep it
+            ctx1b = _ModelContext(sessions, config, relaxed=False)
+            ctx1b.add_balance_objective()
+            for i, t in baseline_starts.items():
+                ctx1b.model.AddHint(ctx1b.starts[i], t)
+            solver1c, status1c = _solve(ctx1b, max(MIN_SOLVE_SECONDS, time_left()), num_workers, log_progress, cancel_event)
+            total_wall_time += solver1c.WallTime()
 
         if status1c in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             placed1c, _ = ctx1b.extract(solver1c)
@@ -539,7 +594,7 @@ def build_and_solve(
     #      constraints, or it just didn't finish in time). Rather than
     #      report failure, build the relaxed model and return the best
     #      PARTIAL timetable possible.
-    remaining = max(5.0, time_limit_seconds - total_wall_time)
-    relaxed_result = _solve_relaxed(sessions, config, remaining, num_workers, log_progress)
+    remaining = max(MIN_SOLVE_SECONDS, time_left())
+    relaxed_result = _solve_relaxed(sessions, config, remaining, num_workers, log_progress, cancel_event)
     relaxed_result.wall_time_seconds += total_wall_time
     return relaxed_result

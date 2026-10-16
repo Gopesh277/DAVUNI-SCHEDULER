@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DAV University · Timetable Management System</title>
+<title>DAV University·Timetable Management System</title>
 <link rel="icon" href="assets/logo.jpg" type="image/jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
     <div class="letterhead-brand">
       <img src="assets/logo.jpg" alt="DAV University crest" class="crest" id="crestImg">
       <div class="brand-text">
-        <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+        <p class="uni-name">DAV UNIVERSITY,JALANDHAR</p>
         <h1 class="dept-name" id="deptHeading">&nbsp;</h1>
         <p class="sys-name">Constraint-Based University Timetable Optimization System</p>
       </div>
@@ -147,7 +147,7 @@
 
       <div class="settings-card wide">
         <h3>Periods</h3>
-        <p class="settings-note">The period index right after "Break after period" marks where the lunch break sits — a 2-period lab block will never be scheduled to straddle it.</p>
+        <p class="settings-note">The period index right after "Break after period" marks where the lunch break sits a 2-period lab block will never be scheduled to straddle it.</p>
         <div id="periodsHost"></div>
         <button class="btn btn-ghost small" id="addPeriodBtn">+ Add period</button>
         <div class="field-row">
@@ -163,6 +163,7 @@
         <div class="field-row"><label>Balance load across the week</label>
           <label class="switch"><input type="checkbox" id="balanceInput"><span class="slider"></span></label>
         </div>
+        <p class="settings-note">The solver never runs longer than the time limit you set here, and every timetable is generated with exactly this value. A longer limit gives it more time to balance each teacher's week and to find a complete timetable for a heavy load.</p>
         <p class="settings-note">Turning balancing off finds any feasible timetable faster, without trying to spread each teacher's hours evenly across days.</p>
       </div>
 
@@ -174,7 +175,7 @@
 
       <div class="settings-card wide">
         <h3>Daily load by faculty position</h3>
-        <p class="settings-note">Maximum periods per day allowed for each register category — e.g. senior faculty typically carry a lighter daily teaching load than contractual faculty. Matched against each course row's "Register" value on the Manage data tab (case-insensitive). Anything not listed uses the fallback cap.</p>
+        <p class="settings-note">Maximum periods per day allowed for each register category e.g. senior faculty typically carry a lighter daily teaching load than contractual faculty. Matched against each course row's "Register" value on the Manage data tab (case-insensitive). Anything not listed uses the fallback cap.</p>
         <div id="positionCapsHost" class="position-caps"></div>
         <div class="field-row" style="margin-top:8px;">
           <button class="btn btn-ghost small" id="addPositionBtn">+ Add category</button>

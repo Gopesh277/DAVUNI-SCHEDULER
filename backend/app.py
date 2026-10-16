@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from timetable_scheduler import (
+    SolveCancelled,
     SchedulerConfig, Period, CourseOffering,
     build_sessions, build_and_solve, export_workbook,
     parse_teaching_load_bytes,
@@ -80,7 +81,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if role != auth.ROLE_DEAN:
                 return RedirectResponse(url="/")
 
-        return await call_next(request)
+        response = await call_next(request)
+        if path.startswith("/api/") or path in ("/", "/index.html", "/dean.html"):
+            response.headers["Cache-Control"] = "no-store"   # data / app shell is never served from a browser cache
+        return response
 
 
 app.add_middleware(AuthMiddleware)
@@ -89,52 +93,69 @@ app.include_router(dean.router)   # Dean's Office portal API (/api/dean/*), regi
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
-class _GenerateCoordinator:
-    """Coalesces concurrent /api/generate calls into a single solve.
+class _Run:
+    """One in-flight solve."""
 
-    Without this, two requests arriving close together -- two browser tabs,
-    a page reload while the frontend's own auto-generate-on-first-load is
-    still solving, etc. -- would each kick off an independent CP-SAT solve.
-    That doubles OR-Tools worker-thread contention (both solves get slower)
-    and races non-deterministically over which result ends up in
-    store.last_result. Instead, a request that arrives while a solve is
-    already running waits for it and reuses its result rather than starting
-    a competing one.
+    def __init__(self, key):
+        self.key = key                    # (time_limit, workers, balance, data_version)
+        self.cancel = threading.Event()   # set when a newer request replaces this solve
+        self.done = threading.Event()
+        self.response = None
+        self.error: Exception | None = None
+
+
+class _GenerateCoordinator:
+    """Keeps /api/generate to one solve at a time per department.
+
+    * Same settings + same data as the solve already running (two browser
+      tabs, a page reload while the page's own auto-generate is still
+      solving...): the new request waits for it and shares its result instead
+      of starting a competing CP-SAT solve.
+    * DIFFERENT settings or data (e.g. you raised the time limit, or edited
+      the register): the running solve is out of date, so it is stopped and
+      the new request runs with the new values. Previously such a request
+      silently joined the old solve and got a result computed with the OLD
+      time limit -- which is why raising the limit "still took 150 s".
+      A request that was replaced gets SolveCancelled.
     """
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._in_progress = False
-        self._done = threading.Event()
-        self._response = None
-        self._error: Exception | None = None
+        self._current: _Run | None = None
 
-    def run(self, solve_fn):
-        with self._lock:
-            if self._in_progress:
-                join_existing = True
-            else:
-                self._in_progress = True
-                self._done.clear()
-                self._response = None
-                self._error = None
-                join_existing = False
-
-        if join_existing:
-            self._done.wait()
-            if self._error is not None:
-                raise self._error
-            return self._response
+    def run(self, key, solve_fn):
+        while True:
+            with self._lock:
+                cur = self._current
+                if cur is None:
+                    mine = _Run(key)
+                    self._current = mine
+                    action = "lead"
+                elif cur.key == key and not cur.cancel.is_set():
+                    action = "join"
+                else:
+                    cur.cancel.set()
+                    action = "supersede"
+            if action == "lead":
+                break
+            cur.done.wait()
+            if action == "join":
+                if cur.error is not None:
+                    raise cur.error
+                return cur.response
+            # "supersede": the old solve has stopped; loop and take over
 
         try:
-            self._response = solve_fn()
+            mine.response = solve_fn(mine.cancel)
         except Exception as e:
-            self._error = e
+            mine.error = e
             raise
         finally:
-            self._in_progress = False
-            self._done.set()
-        return self._response
+            with self._lock:
+                if self._current is mine:
+                    self._current = None
+            mine.done.set()
+        return mine.response
 
 
 _coordinators: dict[str, _GenerateCoordinator] = {}
@@ -418,6 +439,7 @@ def put_config(cfg: ConfigIn):
         default_position_daily_cap=cfg.default_position_daily_cap,
     )
     store.set_config(new_config)
+    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {"config": _config_to_dict(store.config)}
 
 
@@ -439,6 +461,7 @@ def get_courses():
 def put_courses(courses: list[CourseIn]):
     offerings = [CourseOffering(**c.dict()) for c in courses]
     store.set_courses(offerings)
+    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
         "diagnostics": _course_diagnostics(store.courses),
@@ -455,6 +478,7 @@ async def upload_courses(file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     store.set_courses(offerings)
+    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
         "diagnostics": _course_diagnostics(store.courses),
@@ -497,7 +521,9 @@ def generate(req: GenerateRequest = GenerateRequest()):
     if req.balance is not None:
         settings["balance"] = req.balance
 
-    def _solve():
+    key = (settings["time_limit"], settings["workers"], settings["balance"], store.data_version)
+
+    def _solve(cancel):
         sessions = build_sessions(store.courses, config=store.config)
         capacity = preflight_capacity(sessions, store.config)
         result = build_and_solve(
@@ -506,6 +532,7 @@ def generate(req: GenerateRequest = GenerateRequest()):
             time_limit_seconds=settings["time_limit"],
             num_workers=settings["workers"],
             balance_load=settings["balance"],
+            cancel_event=cancel,
         )
         store.last_result = result
         response = _result_to_dict(result)
@@ -513,7 +540,11 @@ def generate(req: GenerateRequest = GenerateRequest()):
         response["capacity"] = capacity
         return response
 
-    return _generate_coordinator_for_current_dept().run(_solve)
+    try:
+        return _generate_coordinator_for_current_dept().run(key, _solve)
+    except SolveCancelled:
+        raise HTTPException(409, "This generate request was replaced by a newer one (settings or data changed).")
+
 
 
 @app.get("/api/schedule")

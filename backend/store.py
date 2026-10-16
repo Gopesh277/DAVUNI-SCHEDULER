@@ -84,6 +84,9 @@ class DeptStore:
             "balance": True,
         }
         self.last_result: ScheduleResult | None = None
+        # bumped whenever the register or rooms/days/periods/rules change, so a solve that
+        # started on older data can be recognised as out of date
+        self.data_version = 0
         self._load()
 
     @property
@@ -149,11 +152,13 @@ class DeptStore:
     def set_courses(self, courses: list[CourseOffering]):
         with self._lock:
             self.courses = courses
+            self.data_version += 1
             self._persist()
 
     def set_config(self, config: SchedulerConfig):
         with self._lock:
             self.config = config
+            self.data_version += 1
             self._persist()
 
     def set_solver_settings(self, **kwargs):

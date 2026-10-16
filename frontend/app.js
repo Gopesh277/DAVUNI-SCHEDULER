@@ -23,7 +23,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = j.detail || msg; } catch (e) {}
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 }
@@ -515,11 +517,12 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     const cfgRes = await putJSON("/config", newConfig);
     cfg = cfgRes.config;
 
-    const settings = {
-      time_limit: Number(document.getElementById("timeLimitInput").value) || 60,
-      workers: Number(document.getElementById("workersInput").value) || 8,
-      balance: document.getElementById("balanceInput").checked,
-    };
+    // No silent fallbacks: what you type is what the solver uses.
+    const tl = Number(document.getElementById("timeLimitInput").value);
+    const wk = Number(document.getElementById("workersInput").value);
+    if (!Number.isInteger(tl) || tl < 1 || tl > 600) throw new Error("Solver time limit must be a whole number of seconds between 1 and 600.");
+    if (!Number.isInteger(wk) || wk < 1 || wk > 32) throw new Error("Parallel workers must be a whole number between 1 and 32.");
+    const settings = { time_limit: tl, workers: wk, balance: document.getElementById("balanceInput").checked };
     const settingsRes = await putJSON("/solver-settings", settings);
     solverSettings = settingsRes.solver_settings;
 
@@ -687,6 +690,7 @@ function setBusy(btn, busy, label) {
   btn.innerHTML = busy ? `<span class="spinner"></span> ${label}` : btn.dataset.label;
 }
 
+let genSeq = 0;
 async function regenerate() {
   if (courses.length === 0) {
     // Nothing to solve yet -- don't round-trip to the backend just to get
@@ -699,13 +703,19 @@ async function regenerate() {
     return;
   }
   const btn = document.getElementById("regenBtn");
-  setBusy(btn, true, "Solving… (can take 1-2 min)");
+  const mySeq = ++genSeq;   // only the newest generate request is allowed to update the screen
+  setBusy(btn, true, `Solving… (up to ${solverSettings ? solverSettings.time_limit : "?"}s)`);
   clearNotice();
   try {
-    schedule = await postJSON("/generate", {});
+    const result = await postJSON("/generate", {});
+    if (mySeq !== genSeq) return;
+    schedule = result;
     document.getElementById("genMeta").textContent = `generated ${new Date().toLocaleString()} · ${schedule.wall_time_seconds}s`;
     renderAllViews();
   } catch (e) {
+    // 409 = the server stopped this solve because a newer generate request (new
+    // settings or data) replaced it; that newer request updates the screen.
+    if (e.status === 409 || mySeq !== genSeq) return;
     // Don't leave a stale (possibly pre-fix, possibly just outdated)
     // schedule on screen when a generate call fails -- clear it so the
     // views honestly reflect "nothing generated", not old data.
@@ -718,7 +728,7 @@ async function regenerate() {
     renderLoadView();
     notice("err", `<b>Generation failed.</b> ${e.message} If this was a network timeout, the solver may still have been working — try Generate again, or raise the time limit in Settings.`);
   } finally {
-    setBusy(btn, false, "⟳ Generate timetable");
+    if (mySeq === genSeq) setBusy(btn, false, "⟳ Generate timetable");
   }
 }
 document.getElementById("regenBtn").addEventListener("click", regenerate);
@@ -847,3 +857,23 @@ async function init() {
   }
 }
 init();
+
+// =====================================================================
+// Solver fields (time limit / workers / balance) save as soon as they are
+// changed, so "Generate timetable" always uses exactly what Settings shows.
+// =====================================================================
+async function saveSolverFields() {
+  const tl = Number(document.getElementById("timeLimitInput").value);
+  const wk = Number(document.getElementById("workersInput").value);
+  if (!Number.isInteger(tl) || tl < 1 || tl > 600) { notice("err", "<b>Not saved.</b> Solver time limit must be a whole number of seconds between 1 and 600."); return; }
+  if (!Number.isInteger(wk) || wk < 1 || wk > 32) { notice("err", "<b>Not saved.</b> Parallel workers must be a whole number between 1 and 32."); return; }
+  try {
+    const r = await putJSON("/solver-settings", { time_limit: tl, workers: wk, balance: document.getElementById("balanceInput").checked });
+    solverSettings = r.solver_settings;
+    document.getElementById("settingsSavedPill").textContent = `solver: ${solverSettings.time_limit}s saved`;
+  } catch (e) {
+    notice("err", `<b>Couldn't save solver settings.</b> ${e.message}`);
+  }
+}
+["timeLimitInput", "workersInput", "balanceInput"].forEach((id) =>
+  document.getElementById(id).addEventListener("change", saveSolverFields));
