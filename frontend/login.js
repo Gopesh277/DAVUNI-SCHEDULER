@@ -9,7 +9,7 @@ let departments = [];
 // Show the chosen department in the letterhead exactly like the main page does.
 function showDepartment() {
   const d = departments.find((x) => x.id === deptSelect.value);
-  deptHeading.textContent = d ? d.display : "Select your department";
+  deptHeading.textContent = d ? d.display : "All Departments";
   footDept.textContent = d ? `Dept. of ${d.short}` : "All departments";
   document.title = d ? `Sign in · DAV University · ${d.short} Timetable` : "Sign in · DAV University · Timetable Management System";
 }
@@ -20,11 +20,10 @@ fetch("/api/departments")
     departments = data.departments || [];
     deptSelect.insertAdjacentHTML("beforeend", departments.map(
       (d) => `<option value="${d.id}">${d.display}</option>`).join(""));
-    let saved = null;
-    try { saved = localStorage.getItem("tt_department"); } catch (e) {}
-    if (saved && departments.some((d) => d.id === saved)) deptSelect.value = saved;
+    // Don't pre-select a remembered department: the login page should
+    // always open neutral ("All Departments") until the user picks one.
     showDepartment();
-    (deptSelect.value ? document.getElementById("username") : deptSelect).focus();
+    deptSelect.focus();
   })
   .catch(() => showError("Couldn't load the department list. Please refresh the page."));
 

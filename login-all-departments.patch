@@ -1,0 +1,41 @@
+diff --git a/frontend/login.html b/frontend/login.html
+index 0331e1a..a35db0c 100644
+--- a/frontend/login.html
++++ b/frontend/login.html
+@@ -20,7 +20,7 @@
+       <img src="assets/logo.jpg" alt="DAV University crest" class="crest">
+       <div class="brand-text">
+         <p class="uni-name">DAV UNIVERSITY, JALANDHAR</p>
+-        <h1 class="dept-name" id="deptHeading">Select your department</h1>
++        <h1 class="dept-name" id="deptHeading">All Departments</h1>
+         <p class="sys-name">Constraint-Based University Timetable Optimization System</p>
+       </div>
+     </div>
+diff --git a/frontend/login.js b/frontend/login.js
+index 4bfbf87..b0e63e5 100644
+--- a/frontend/login.js
++++ b/frontend/login.js
+@@ -9,7 +9,7 @@ let departments = [];
+ // Show the chosen department in the letterhead exactly like the main page does.
+ function showDepartment() {
+   const d = departments.find((x) => x.id === deptSelect.value);
+-  deptHeading.textContent = d ? d.display : "Select your department";
++  deptHeading.textContent = d ? d.display : "All Departments";
+   footDept.textContent = d ? `Dept. of ${d.short}` : "All departments";
+   document.title = d ? `Sign in · DAV University · ${d.short} Timetable` : "Sign in · DAV University · Timetable Management System";
+ }
+@@ -20,11 +20,10 @@ fetch("/api/departments")
+     departments = data.departments || [];
+     deptSelect.insertAdjacentHTML("beforeend", departments.map(
+       (d) => `<option value="${d.id}">${d.display}</option>`).join(""));
+-    let saved = null;
+-    try { saved = localStorage.getItem("tt_department"); } catch (e) {}
+-    if (saved && departments.some((d) => d.id === saved)) deptSelect.value = saved;
++    // Don't pre-select a remembered department: the login page should
++    // always open neutral ("All Departments") until the user picks one.
+     showDepartment();
+-    (deptSelect.value ? document.getElementById("username") : deptSelect).focus();
++    deptSelect.focus();
+   })
+   .catch(() => showError("Couldn't load the department list. Please refresh the page."));
+ 
