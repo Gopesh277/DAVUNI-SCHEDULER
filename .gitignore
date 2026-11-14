@@ -83,3 +83,7 @@ backend/data/app_state.json
 
 # Keep the Docker env template
 !.env.example
+
+# Admin password hashes set from inside the app
+backend/data/credentials.json
+backend/data/credentials.tmp

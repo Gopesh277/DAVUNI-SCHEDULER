@@ -63,12 +63,11 @@ body{
   padding:24px 28px 20px;
   color:var(--white);
   position:relative;
-  overflow:hidden;
   box-shadow:0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 40px -20px rgba(69,11,21,0.55);
 }
 .board::before{
   content:"";
-  position:absolute; inset:0;
+  position:absolute; inset:0; border-radius:inherit; /* clips the ruled lines to the rounded corners (replaces overflow:hidden, which hid the download menu) */
   background-image:repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 26px);
   pointer-events:none;
 }
@@ -317,3 +316,146 @@ footer{margin-top:36px; text-align:center; font-family:'JetBrains Mono', monospa
 .modal-actions{display:flex; justify-content:space-between; gap:10px; margin-top:18px;}
 .modal-ghost,.modal-ghost:hover:not(:disabled){background:var(--paper-dim); color:var(--maroon-deep); border:1px solid var(--line);}
 .modal-card .board-eyebrow{color:var(--maroon);}
+
+
+/* ================= HEADER LINKS ================= */
+.header-links{display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:8px;}
+.header-links .logout-link{margin:0;}
+.header-links-sep{color:var(--ink-soft); font-size:11px;}
+
+/* ================= DOWNLOAD MENU ================= */
+.dl-wrap{position:relative; display:inline-block;}
+.dl-menu{
+  position:absolute; left:0; top:calc(100% + 6px); z-index:50; min-width:270px;
+  background:var(--white); border:1px solid var(--line); border-radius:10px; padding:6px;
+  box-shadow:0 16px 36px -14px rgba(69,11,21,0.55);
+}
+.dl-menu[hidden]{display:none;}
+.dl-menu button{
+  display:flex; flex-direction:column; align-items:flex-start; gap:1px; width:100%; text-align:left;
+  background:none; border:none; border-radius:7px; padding:8px 10px; cursor:pointer;
+  font-family:'Space Grotesk', sans-serif; color:var(--ink);
+}
+.dl-menu button b{font-size:13px; color:var(--maroon);}
+.dl-menu button span{font-size:11.5px; color:var(--ink-soft);}
+.dl-menu button:hover, .dl-menu button:focus-visible{background:var(--paper-dim); outline:none;}
+.dl-menu .dl-all{border-top:1px solid var(--line); border-radius:0 0 7px 7px; margin-top:4px; padding-top:10px;}
+
+/* ================= CHANGE PASSWORD ================= */
+.text-input{
+  width:100%; font-family:'Space Grotesk', sans-serif; font-size:14px; padding:9px 11px;
+  border:1px solid var(--line); border-radius:7px; background:var(--paper); color:var(--ink);
+}
+.text-input:focus{outline:none; border-color:var(--gold-deep); background:#FFFCF0;}
+.show-pw{display:flex; align-items:center; gap:7px; margin-top:12px; font-size:12.5px; color:var(--ink-soft); cursor:pointer;}
+
+
+/* =====================================================================
+   LAYOUT v2 — symmetrical + mobile friendly
+   ===================================================================== */
+html{-webkit-text-size-adjust:100%; text-size-adjust:100%;}
+*,*::before,*::after{box-sizing:border-box;}
+img{max-width:100%;}
+
+/* ---- letterhead: crest | centred title | motto, balanced left and right ---- */
+.letterhead-inner{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; column-gap:20px; row-gap:10px; flex-wrap:nowrap;}
+.letterhead-brand{display:contents;}
+.letterhead-inner .crest{justify-self:start;}
+.letterhead-inner .brand-text{align-items:center; text-align:center; min-width:0;}
+.letterhead-motto{justify-self:end;}
+.header-links{justify-content:flex-end;}
+
+/* ---- board: everything centred, stats in equal columns ---- */
+.board{text-align:center; z-index:2;}
+.board-top{flex-direction:column; align-items:center; gap:18px;}
+.board-sub{margin-left:auto; margin-right:auto;}
+.board-stats{display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); width:100%; justify-content:stretch; gap:0;}
+.stat{text-align:center; padding:4px 8px;}
+.board-bottom{justify-content:center; margin-top:22px; z-index:5;}
+.board-meta{margin-left:0; flex-basis:100%; text-align:center;}
+.dl-menu{text-align:left; z-index:60;}
+.dl-wrap{z-index:60;}
+.tabs{position:relative; z-index:1;}
+
+/* ---- tabs: equal width on desktop, swipeable row on small screens ---- */
+.tabs{flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -webkit-overflow-scrolling:touch;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{flex:1 1 auto; text-align:center; white-space:nowrap;}
+
+/* ---- section header + controls ---- */
+.section-head{flex-wrap:wrap; gap:4px 12px;}
+#loadHost{overflow-x:auto;}
+table.simple{min-width:620px;}
+
+/* ---- timetable grid: day column stays put while you swipe sideways ---- */
+.grid-wrap{-webkit-overflow-scrolling:touch;}
+table.tt thead th:first-child, table.tt tbody th{position:sticky; left:0; z-index:2; min-width:76px; text-align:center;}
+table.tt thead th:first-child{z-index:3;}
+table.tt th, table.tt td{box-sizing:border-box;}
+
+.modal-card{max-height:calc(100vh - 40px); overflow-y:auto;}
+
+/* ---- tablet ---- */
+@media (max-width:900px){
+  .app{padding:16px 14px 56px;}
+  .letterhead-inner{padding:14px 14px 12px;}
+  .board{padding:20px 18px 18px;}
+  .board-stats{grid-template-columns:repeat(3, minmax(0,1fr)); row-gap:14px;}
+  .stat:nth-child(3n+1){border-left:none;}
+  .tab{flex:0 0 auto;}
+}
+
+/* ---- phone ---- */
+@media (max-width:640px){
+  /* header stacks and centres */
+  .letterhead-inner{grid-template-columns:1fr; justify-items:center; text-align:center; row-gap:8px;}
+  .letterhead-inner .crest{justify-self:center; width:54px; height:54px;}
+  .letterhead-motto{justify-self:center; text-align:center;}
+  .header-links{justify-content:center;}
+  .uni-name{font-size:10.5px; letter-spacing:.1em;}
+  .dept-name{font-size:18px;}
+  .sys-name{font-size:11.5px;}
+
+  .board{padding:18px 14px 16px; border-radius:12px;}
+  .board-title{font-size:20px;}
+  .board-sub{font-size:12.5px;}
+  .stat-num{font-size:22px;}
+  .stat-label{font-size:9px;}
+
+  /* action buttons: two equal columns, download menu spans the full width */
+  .board-bottom{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .board-bottom > .btn, .dl-wrap .btn{width:100%; justify-content:center; min-height:44px;}
+  .dl-wrap{grid-column:1 / -1; display:block;}
+  .dl-menu{left:0; right:0; min-width:0;}
+  .dl-menu button{padding:12px 12px;}
+  #regenBtn{grid-column:1 / -1; order:1;}
+  #uploadBtn{order:2;}
+  #resetBtn{order:3;}
+  .dl-wrap{order:4;}
+  .board-meta{grid-column:1 / -1; order:5;}
+
+  .tab{padding:12px 13px; font-size:13px;}
+
+  .controls{align-items:stretch;}
+  .controls select, .controls .btn{flex:1 1 100%; width:100%; min-height:44px;}
+  .controls .pill{align-self:center;}
+
+  /* 16px inputs stop iOS Safari zooming the page on focus */
+  select, .textbox, .text-input, .textarea, .num-input, table.editor input, table.editor select{font-size:16px;}
+  .settings-card{padding:14px;}
+  .field-row{flex-wrap:wrap; gap:6px;}
+
+  .cell{width:130px; padding:4px;}
+  table.tt{min-width:760px;}
+
+  .modal-backdrop{padding:12px; align-items:flex-end;}
+  .modal-card{padding:20px 16px 16px; border-radius:14px; max-width:none;}
+  .modal-actions{flex-direction:column-reverse;}
+  .modal-actions .btn{width:100%; justify-content:center; min-height:44px;}
+
+  footer{font-size:10px; padding:0 6px;}
+}
+
+@media (hover:none){
+  .btn, .tab{min-height:40px;}
+}

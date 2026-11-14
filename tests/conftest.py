@@ -14,6 +14,7 @@ def client_factory(tmp_path, monkeypatch):
     monkeypatch.setattr(store_mod, "LEGACY_STATE_FILE", tmp_path / "app_state.json")
     monkeypatch.setattr(store_mod, "registry", store_mod._Registry())
     monkeypatch.setattr(auth, "_login_attempts", {})
+    monkeypatch.setattr(auth, "CREDENTIALS_FILE", tmp_path / "credentials.json")
     monkeypatch.setattr(auth, "APP_USERNAME", "admin")
     monkeypatch.setattr(auth, "APP_PASSWORD", "pw")
     monkeypatch.setattr(auth, "COOKIE_SECURE", False)  # test client speaks plain http

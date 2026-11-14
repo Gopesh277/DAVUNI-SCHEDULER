@@ -399,9 +399,83 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   }
 });
 
-document.getElementById("downloadBtn").addEventListener("click", () => {
-  window.location.href = API + "/schedule/download";
-});
+// Download menu: Section-wise / Teacher-wise / Room-wise / Everything
+(function setupDownloadMenu() {
+  const btn = document.getElementById("downloadBtn");
+  const menu = document.getElementById("dlMenu");
+  const wrap = document.getElementById("dlWrap");
+  const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    btn.setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  menu.addEventListener("click", (e) => {
+    const item = e.target.closest("button[data-view]");
+    if (!item) return;
+    close();
+    if (!schedule || !schedule.stats || schedule.stats.placed === 0) {
+      notice("warn", "<b>Nothing to download yet.</b> Generate a timetable first.");
+      return;
+    }
+    window.location.href = `${API}/schedule/download?view=${encodeURIComponent(item.dataset.view)}`;
+  });
+  document.addEventListener("click", (e) => { if (!wrap.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+})();
+
+// =====================================================================
+// Change password
+// =====================================================================
+(function setupChangePassword() {
+  const modal = document.getElementById("changePwModal");
+  const errBox = document.getElementById("changePwError");
+  const okBox = document.getElementById("changePwOk");
+  const cur = document.getElementById("pwCurrent");
+  const nw = document.getElementById("pwNew");
+  const conf = document.getElementById("pwConfirm");
+  const saveBtn = document.getElementById("changePwSave");
+  const fields = [cur, nw, conf];
+
+  const showErr = (m) => { okBox.style.display = "none"; errBox.textContent = m; errBox.style.display = "block"; };
+  const close = () => { modal.style.display = "none"; fields.forEach(f => f.value = ""); };
+  const open = () => {
+    errBox.style.display = "none"; okBox.style.display = "none";
+    document.getElementById("pwShow").checked = false;
+    fields.forEach(f => { f.value = ""; f.type = "password"; });
+    modal.style.display = "flex";
+    cur.focus();
+  };
+
+  document.getElementById("changePwBtn").addEventListener("click", open);
+  document.getElementById("changePwCancel").addEventListener("click", close);
+  modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modal.style.display !== "none") close(); });
+  document.getElementById("pwShow").addEventListener("change", (e) => {
+    fields.forEach(f => f.type = e.target.checked ? "text" : "password");
+  });
+  fields.forEach(f => f.addEventListener("keydown", (e) => { if (e.key === "Enter") saveBtn.click(); }));
+
+  saveBtn.addEventListener("click", async () => {
+    errBox.style.display = "none"; okBox.style.display = "none";
+    if (!cur.value) return showErr("Enter your current password.");
+    if (nw.value.length < 8) return showErr("New password must be at least 8 characters long.");
+    if (nw.value !== conf.value) return showErr("The new password and its confirmation don't match.");
+    if (nw.value === cur.value) return showErr("New password must be different from the current one.");
+    saveBtn.disabled = true;
+    try {
+      await postJSON("/change-password", { current_password: cur.value, new_password: nw.value });
+      fields.forEach(f => f.value = "");
+      okBox.textContent = "Password updated. Use the new password the next time you sign in.";
+      okBox.style.display = "block";
+      setTimeout(() => { if (modal.style.display !== "none") close(); }, 1800);
+    } catch (err) {
+      showErr(err.message || "Couldn't change the password.");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+})();
 
 // =====================================================================
 // Settings tab

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import threading
 from collections import defaultdict
@@ -10,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from timetable_scheduler import (
@@ -22,7 +24,7 @@ from timetable_scheduler import (
 )
 from . import auth, departments, dean
 from . import store as store_mod
-from .schemas import CourseIn, ConfigIn, SolverSettingsIn, GenerateRequest, LoginIn, PlaceRequest, MoveRequest, UnplaceRequest
+from .schemas import CourseIn, ConfigIn, SolverSettingsIn, GenerateRequest, LoginIn, ChangePasswordIn, PlaceRequest, MoveRequest, UnplaceRequest
 from .store import store
 
 app = FastAPI(title="DAV University Timetable API")
@@ -390,6 +392,38 @@ def logout(request: Request, response: Response):
     return {"ok": True}
 
 
+@app.post("/api/change-password")
+def change_password(payload: ChangePasswordIn, request: Request):
+    """Let the signed-in department admin change their own password.
+
+    Requires the current password (so a walk-up on an unlocked browser can't
+    lock the owner out), enforces a minimum length, and signs every OTHER
+    session of this department out afterwards."""
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    dept_id = auth.session_department(token)
+    if not dept_id:
+        raise HTTPException(403, "Only a department admin can change a password.")
+
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, retry_after = auth.check_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(429, f"Too many failed attempts. Try again in {retry_after}s.")
+
+    username = auth.expected_username(dept_id)
+    if not auth.verify_credentials(username, payload.current_password, dept_id):
+        auth.record_failed_attempt(client_ip)
+        raise HTTPException(400, "Current password is incorrect.")
+    try:
+        auth.validate_new_password(payload.new_password, payload.current_password)
+    except auth.PasswordChangeError as e:
+        raise HTTPException(400, str(e))
+
+    auth.set_password(dept_id, payload.new_password)
+    auth.clear_failed_attempts(client_ip)
+    signed_out = auth.destroy_other_sessions(dept_id, token)
+    return {"ok": True, "other_sessions_signed_out": signed_out}
+
+
 @app.get("/api/me")
 def me(request: Request):
     info = auth.session_info(request.cookies.get(auth.SESSION_COOKIE))
@@ -401,7 +435,7 @@ def me(request: Request):
     return {
         "authenticated": authed,
         "role": auth.ROLE_DEPT if authed else None,
-        "username": auth.APP_USERNAME if authed else None,
+        "username": auth.expected_username(info["dept"]) if authed else None,
         "department": dept,
     }
 
@@ -609,18 +643,34 @@ def unplace_schedule_session(req: UnplaceRequest):
     return _result_response()
 
 
+DOWNLOAD_VIEWS = {"all", "sections", "teachers", "rooms"}
+
+
 @app.get("/api/schedule/download")
-def download_schedule():
+def download_schedule(view: str = "all"):
+    """Download the timetable as .xlsx.
+
+    view=all       -> every sheet (Master, Faculty_Load, Section/Teacher/Room-wise)
+    view=sections  -> section-wise timetables only
+    view=teachers  -> teacher-wise timetables only
+    view=rooms     -> room-wise timetables only
+    """
+    view = (view or "all").strip().lower()
+    if view not in DOWNLOAD_VIEWS:
+        raise HTTPException(400, "view must be one of: all, sections, teachers, rooms.")
     if store.last_result is None:
         raise HTTPException(404, "No schedule generated yet. POST /api/generate first.")
+    dept = departments.get(store_mod.current_department_id()) or {}
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        dept = departments.get(store_mod.current_department_id()) or {}
         export_workbook(store.last_result, tmp.name,
-                        department_name=dept.get("display", "Department of Computer Science & Engineering"))
+                        department_name=dept.get("display", "Department of Computer Science & Engineering"),
+                        views=None if view == "all" else [view])
         path = tmp.name
+    suffix = "" if view == "all" else f"_{view[:-1]}_wise"
     return FileResponse(
-        path, filename=f"timetable_{dept.get('id', 'dept')}.xlsx",
+        path, filename=f"timetable_{dept.get('id', 'dept')}{suffix}.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=BackgroundTask(os.unlink, path),
     )
 
 

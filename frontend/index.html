@@ -26,7 +26,11 @@
     <div class="letterhead-motto">
       <p class="motto-hindi">असतो मा सद्गमय</p>
       <p class="motto-en">"Lead us from darkness to light"</p>
-      <button class="logout-link" id="logoutBtn" type="button">Sign out</button>
+      <div class="header-links">
+        <button class="logout-link" id="changePwBtn" type="button">Change password</button>
+        <span class="header-links-sep">·</span>
+        <button class="logout-link" id="logoutBtn" type="button">Sign out</button>
+      </div>
     </div>
   </div>
   <div class="letterhead-rule"></div>
@@ -47,7 +51,15 @@
       <button class="btn btn-primary" id="regenBtn">⟳ Generate timetable</button>
       <button class="btn btn-ghost" id="uploadBtn">↑ Load teaching-load file</button>
       <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls,.csv">
-      <button class="btn btn-ghost" id="downloadBtn">↓ Download .xlsx</button>
+      <div class="dl-wrap" id="dlWrap">
+        <button class="btn btn-ghost" id="downloadBtn" type="button" aria-haspopup="true" aria-expanded="false">↓ Download .xlsx ▾</button>
+        <div class="dl-menu" id="dlMenu" role="menu" hidden>
+          <button type="button" role="menuitem" data-view="sections"><b>Section-wise</b><span>one timetable per class</span></button>
+          <button type="button" role="menuitem" data-view="teachers"><b>Teacher-wise</b><span>one timetable per faculty member</span></button>
+          <button type="button" role="menuitem" data-view="rooms"><b>Room-wise</b><span>one timetable per room</span></button>
+          <button type="button" role="menuitem" data-view="all" class="dl-all"><b>Everything</b><span>all three + master list + faculty load</span></button>
+        </div>
+      </div>
       <button class="btn btn-ghost btn-reset" id="resetBtn" title="Clear the timetable and the teaching-load register">✕ Reset board</button>
       <span class="board-meta" id="genMeta"></span>
     </div>
@@ -216,6 +228,33 @@
     <div class="modal-actions">
       <button class="btn btn-ghost modal-ghost" id="roomSetupSignOut" type="button">Sign out</button>
       <button class="btn btn-primary" id="roomSetupSave" type="button">Save rooms &amp; continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CHANGE PASSWORD ================= -->
+<div class="modal-backdrop" id="changePwModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="changePwTitle">
+  <div class="modal-card">
+    <p class="board-eyebrow">Account</p>
+    <h2 id="changePwTitle" class="modal-title">Change admin password</h2>
+    <p class="modal-sub">You'll stay signed in here; any other browser signed in as this department will be signed out.</p>
+    <div id="changePwError" class="notice err" style="display:none; margin-bottom:12px;"></div>
+    <div id="changePwOk" class="notice ok" style="display:none; margin-bottom:12px;"></div>
+
+    <label class="modal-label" for="pwCurrent">Current password</label>
+    <input type="password" id="pwCurrent" class="text-input" autocomplete="current-password">
+
+    <label class="modal-label" for="pwNew">New password <span class="hint">at least 8 characters</span></label>
+    <input type="password" id="pwNew" class="text-input" autocomplete="new-password">
+
+    <label class="modal-label" for="pwConfirm">Confirm new password</label>
+    <input type="password" id="pwConfirm" class="text-input" autocomplete="new-password">
+
+    <label class="show-pw"><input type="checkbox" id="pwShow"> Show passwords</label>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost modal-ghost" id="changePwCancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="changePwSave" type="button">Update password</button>
     </div>
   </div>
 </div>

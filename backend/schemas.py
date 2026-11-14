@@ -58,6 +58,11 @@ class LoginIn(BaseModel):
     password: str
 
 
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class PlaceRequest(BaseModel):
     """Drag an unplaced session onto a specific slot."""
     session_id: int

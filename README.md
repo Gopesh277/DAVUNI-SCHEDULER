@@ -35,8 +35,10 @@ only lives in one place.
      Super Senior 4, Contractual 7, New Faculty 7 — configurable)
    - **load balancer**: minimises the busiest single day for any one
      faculty member, so hours are spread across the week
-4. **Exports** an `.xlsx` with `Master`, `Faculty_Load`, `By_Room`,
-   `By_Teacher`, `By_Section` sheets.
+4. **Exports** an `.xlsx` with `Master`, `Faculty_Load`, `Section_Wise`,
+   `Teacher_Wise`, `Room_Wise` sheets. The three grid sheets look like the
+   web board (maroon header, tan theory cells, mauve practical cells, one
+   timetable per page, landscape A4).
 
 ## Setup
 
@@ -117,8 +119,16 @@ everything is editable in the browser:
   periods a teacher can have, daily load caps per faculty register category,
   and the solver's time limit / worker count / load-balancing toggle. "Save
   settings & regenerate" applies them immediately.
-- **Download .xlsx** — exports the currently-generated timetable in the same
-  five-sheet format as the CLI.
+- **Download .xlsx** — a menu with **Section-wise**, **Teacher-wise**,
+  **Room-wise** (each a single-sheet workbook with one timetable per class /
+  faculty member / room) or **Everything** (all five sheets, same as the CLI).
+- **Change password** (top right, next to Sign out) — the department admin
+  enters the current password, then a new one (8+ characters). It is stored as
+  a salted scrypt hash in `backend/data/credentials.json` and from then on
+  replaces the `APP_PASSWORD` value for that department; other signed-in
+  browsers for the department are signed out. Delete the file to go back to the
+  environment/default password. Keep `backend/data/` on a persistent volume if
+  you deploy with Docker, or the change is lost when the container is rebuilt.
 
 Your edits (register + settings) are saved to `backend/data/app_state.json`
 on the server, so they survive a restart. Delete that file to go back to a
@@ -136,7 +146,8 @@ clean, empty slate.
 | `POST /api/courses/upload` | upload a new `.xlsx`/`.csv` register |
 | `POST /api/generate` | run the solver, returns the full schedule as JSON |
 | `GET /api/schedule` | fetch the last-generated schedule without resolving |
-| `GET /api/schedule/download` | download the current schedule as `.xlsx` |
+| `GET /api/schedule/download?view=all\|sections\|teachers\|rooms` | download the current schedule as `.xlsx` |
+| `POST /api/change-password` | admin changes their department password (`current_password`, `new_password`) |
 
 ## Editing department settings from code
 
