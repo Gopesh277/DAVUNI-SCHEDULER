@@ -5,7 +5,6 @@ import os
 import tempfile
 import threading
 from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
@@ -22,7 +21,7 @@ from timetable_scheduler import (
     validate_offerings, detect_duplicate_offerings, preflight_capacity,
     PlacementError, place_session, unplace_session, move_session,
 )
-from . import auth, departments, dean
+from . import auth, departments
 from . import store as store_mod
 from .schemas import CourseIn, ConfigIn, SolverSettingsIn, GenerateRequest, LoginIn, ChangePasswordIn, PlaceRequest, MoveRequest, UnplaceRequest
 from .store import store
@@ -67,30 +66,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if path not in PUBLIC_API_PATHS:
                 if not authed:
                     return JSONResponse({"detail": "Not authenticated."}, status_code=401)
-                # the two portals are walled off from each other
-                if path.startswith("/api/dean/") and role != auth.ROLE_DEAN:
-                    return JSONResponse({"detail": "This area is for the Dean's Office only."}, status_code=403)
-                if not path.startswith("/api/dean/") and role == auth.ROLE_DEAN:
-                    return JSONResponse({"detail": "The Dean's portal cannot use department routes."}, status_code=403)
         elif path in ("/", "/index.html"):
             if not authed:
                 return RedirectResponse(url="/login.html")
-            if role == auth.ROLE_DEAN:
-                return RedirectResponse(url="/dean.html")
-        elif path == "/dean.html":
-            if not authed:
-                return RedirectResponse(url="/login.html")
-            if role != auth.ROLE_DEAN:
-                return RedirectResponse(url="/")
 
         response = await call_next(request)
-        if path.startswith("/api/") or path in ("/", "/index.html", "/dean.html"):
+        if path.startswith("/api/") or path in ("/", "/index.html"):
             response.headers["Cache-Control"] = "no-store"   # data / app shell is never served from a browser cache
         return response
 
 
 app.add_middleware(AuthMiddleware)
-app.include_router(dean.router)   # Dean's Office portal API (/api/dean/*), registered before the static mount
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -322,25 +308,9 @@ def _result_to_dict(result) -> dict:
     }
 
 
-def _publish_snapshot(result_dict: dict) -> None:
-    """Save the department's latest timetable so the Dean's portal can load
-    it (and it survives a restart). Best-effort: never fails a request."""
-    try:
-        dept = departments.get(store_mod.current_department_id())
-        snap = dict(result_dict)
-        snap["department"] = dept
-        snap["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        store.save_snapshot(snap)
-    except Exception:
-        pass
-
-
 def _result_response() -> dict:
-    """Current timetable as JSON for the API, republishing the snapshot
-    (used after manual place/move/unplace edits)."""
-    d = _result_to_dict(store.last_result)
-    _publish_snapshot(d)
-    return d
+    """Current timetable as JSON for the API (used after manual place/move/unplace edits)."""
+    return _result_to_dict(store.last_result)
 
 
 # =====================================================================
@@ -364,15 +334,6 @@ def login(payload: LoginIn, request: Request, response: Response):
     allowed, retry_after = auth.check_rate_limit(client_ip)
     if not allowed:
         raise HTTPException(429, f"Too many failed login attempts. Try again in {retry_after}s.")
-
-    # The Dean's Office signs in with its own reserved username; no department needed.
-    if auth.is_dean_username(payload.username):
-        if not auth.verify_dean(payload.username, payload.password):
-            auth.record_failed_attempt(client_ip)
-            raise HTTPException(401, "Invalid username or password.")
-        auth.clear_failed_attempts(client_ip)
-        _set_session_cookie(response, auth.create_session(None, role=auth.ROLE_DEAN))
-        return {"ok": True, "role": auth.ROLE_DEAN, "username": auth.DEAN_USERNAME, "department": None, "redirect": "/dean.html"}
 
     dept = departments.get(payload.department)
     if dept is None:
@@ -427,9 +388,6 @@ def change_password(payload: ChangePasswordIn, request: Request):
 @app.get("/api/me")
 def me(request: Request):
     info = auth.session_info(request.cookies.get(auth.SESSION_COOKIE))
-    if info and info["role"] == auth.ROLE_DEAN:
-        return {"authenticated": True, "role": auth.ROLE_DEAN, "username": auth.DEAN_USERNAME,
-                "department": None, "display": "Dean's Office"}
     dept = departments.get(info["dept"]) if info else None
     authed = dept is not None
     return {
@@ -473,7 +431,6 @@ def put_config(cfg: ConfigIn):
         default_position_daily_cap=cfg.default_position_daily_cap,
     )
     store.set_config(new_config)
-    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {"config": _config_to_dict(store.config)}
 
 
@@ -495,7 +452,6 @@ def get_courses():
 def put_courses(courses: list[CourseIn]):
     offerings = [CourseOffering(**c.dict()) for c in courses]
     store.set_courses(offerings)
-    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
         "diagnostics": _course_diagnostics(store.courses),
@@ -512,7 +468,6 @@ async def upload_courses(file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     store.set_courses(offerings)
-    store.clear_snapshot()   # the dean's copy of the timetable is out of date until it is regenerated
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
         "diagnostics": _course_diagnostics(store.courses),
@@ -570,7 +525,6 @@ def generate(req: GenerateRequest = GenerateRequest()):
         )
         store.last_result = result
         response = _result_to_dict(result)
-        _publish_snapshot(response)
         response["capacity"] = capacity
         return response
 
@@ -594,7 +548,6 @@ def reset_schedule():
     manual drag-and-drop placements) AND wipe the teaching-load register.
     Rooms/days/periods and solver settings are left untouched."""
     store.last_result = None
-    store.clear_snapshot()
     store.set_courses([])
     return {"ok": True}
 

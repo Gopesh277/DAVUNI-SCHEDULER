@@ -39,25 +39,6 @@ LEGACY_STATE_FILE = DATA_DIR / "app_state.json"  # pre-multi-department single-f
 PRELOADED_ROOMS_DEPT = "cse"  # the only department that ships with rooms
 
 
-def snapshot_path(dept_id: str) -> Path:
-    return DATA_DIR / f"schedule_{dept_id}.json"
-
-
-def read_snapshot(dept_id: str) -> dict | None:
-    """The department's last generated timetable as saved JSON (or None).
-
-    Read straight from disk -- it never creates a department's store -- so
-    the dean portal can look at every department without touching their
-    live state. Written by DeptStore.save_snapshot."""
-    if not departments.exists(dept_id):
-        return None
-    f = snapshot_path(dept_id.strip().lower())
-    try:
-        return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
-    except Exception:
-        return None
-
-
 def _empty_config() -> SchedulerConfig:
     """Standard days/periods/rules, but no rooms -- the department adds them."""
     return SchedulerConfig(
@@ -129,24 +110,6 @@ class DeptStore:
             "solver_settings": self.solver_settings,
         }
         self.state_file.write_text(json.dumps(d, indent=2, default=str))
-
-    # ---------------- published timetable (for the dean portal) -------
-    def save_snapshot(self, snapshot: dict):
-        """Persist the latest timetable so it survives restarts and can be
-        read by the dean portal. Atomic: write a temp file, then rename."""
-        with self._lock:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            f = snapshot_path(self.dept_id)
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps(snapshot, default=str), encoding="utf-8")
-            os.replace(tmp, f)
-
-    def clear_snapshot(self):
-        with self._lock:
-            try:
-                snapshot_path(self.dept_id).unlink()
-            except FileNotFoundError:
-                pass
 
     # ---------------- mutators -----------------------------------------
     def set_courses(self, courses: list[CourseOffering]):

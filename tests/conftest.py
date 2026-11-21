@@ -1,4 +1,4 @@
-"""Shared test fixtures: isolated data dir + a helper that signs in as a department or the dean."""
+"""Shared test fixtures: isolated data dir + a helper that signs in as a department."""
 
 import pytest
 from fastapi.testclient import TestClient

@@ -46,18 +46,11 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
 # only if you're deploying somewhere without TLS in front (not recommended).
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").strip().lower() not in ("false", "0", "no")
 
-# The Dean's Office login. It is not tied to any department and opens the
-# read-only dean portal (all departments' timetables + faculty availability).
-# Override with DEAN_USERNAME / DEAN_PASSWORD -- change these in production.
-DEAN_USERNAME = os.environ.get("DEAN_USERNAME", "dean")
-DEAN_PASSWORD = os.environ.get("DEAN_PASSWORD", "dean_admin123")
-
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 CREDENTIALS_FILE = Path(__file__).parent / "data" / "credentials.json"
 
 ROLE_DEPT = "department"
-ROLE_DEAN = "dean"
 
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 5 * 60  # lock out an IP for 5 minutes after 5 failures
@@ -175,15 +168,6 @@ def destroy_other_sessions(dept_id: str, keep_token: str | None) -> int:
     return n
 
 
-def is_dean_username(username: str) -> bool:
-    """True if the typed username is the (reserved) dean username."""
-    return hmac.compare_digest((username or "").strip().lower().encode(), DEAN_USERNAME.lower().encode())
-
-
-def verify_dean(username: str, password: str) -> bool:
-    return is_dean_username(username) and hmac.compare_digest((password or "").encode(), DEAN_PASSWORD.encode())
-
-
 def check_rate_limit(client_ip: str) -> tuple[bool, int]:
     """Returns (allowed, retry_after_seconds). Once MAX_LOGIN_ATTEMPTS
     failures have happened for this IP within LOGIN_LOCKOUT_SECONDS,
@@ -227,7 +211,7 @@ def destroy_session(token: str | None) -> None:
 
 
 def session_info(token: str | None) -> dict | None:
-    """{"role": "department"|"dean", "dept": id|None} for a live session, else None."""
+    """{"role": "department", "dept": id} for a live session, else None."""
     if not token:
         return None
     with _lock:
@@ -242,7 +226,7 @@ def session_info(token: str | None) -> dict | None:
 
 
 def session_department(token: str | None) -> str | None:
-    """Department id of a department session (None for dean / missing / expired)."""
+    """Department id of a department session (None if missing / expired)."""
     info = session_info(token)
     return info["dept"] if info and info["role"] == ROLE_DEPT else None
 

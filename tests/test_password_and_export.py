@@ -52,13 +52,6 @@ def test_requires_login(client_factory):
     assert r.status_code == 401
 
 
-def test_dean_cannot_use_it(client_factory):
-    c, r = client_factory("", password="dean_admin123", username="dean")
-    assert r.status_code == 200
-    r = c.post("/api/change-password", json={"current_password": "dean_admin123", "new_password": "N3w-secret!"})
-    assert r.status_code == 403
-
-
 def test_password_change_is_per_department(client_factory):
     c, _ = client_factory("cse")
     c.post("/api/change-password", json={"current_password": "pw", "new_password": "N3w-secret!"})
