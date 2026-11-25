@@ -71,10 +71,11 @@ Then open **http://localhost:8000** — the FastAPI app serves the `frontend/`
 static files itself, so there's nothing else to run.
 
 The app is login-gated. Credentials come from the `APP_USERNAME` /
-`APP_PASSWORD` environment variables; if they're not set, it falls back to
-`admin` / `admin123`. **That fallback is fine for local dev only** — set
-real values for both env vars before deploying anywhere reachable outside
-your own machine:
+`APP_PASSWORD` environment variables. If they're not set, every department
+signs in with `admin` / `admin123` the first time and is **made to choose its
+own password** before it can use the app (every other API call is refused
+until then). After that, each department has its own password. You can also
+set real values up front:
 
 ```bash
 export APP_USERNAME=your-admin-name
@@ -88,6 +89,9 @@ sent back over HTTPS. If you're deploying somewhere without TLS in front
 (not recommended), set `COOKIE_SECURE=false` or login will silently never
 "stick" since the browser won't return the cookie. Plain `http://localhost`
 is exempted by browsers, so local dev is unaffected either way.
+
+Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the
+rate limiter sees each user's real IP rather than the proxy's.
 
 On first launch the app starts with an empty register — the board shows all
 zeros and no timetable is generated until you load one in. Click **"↑ Load
@@ -148,6 +152,58 @@ clean, empty slate.
 | `GET /api/schedule` | fetch the last-generated schedule without resolving |
 | `GET /api/schedule/download?view=all\|sections\|teachers\|rooms` | download the current schedule as `.xlsx` |
 | `POST /api/change-password` | admin changes their department password (`current_password`, `new_password`) |
+
+## Production deployment (campus LAN)
+
+`docker-compose.yml` runs two containers: **Caddy** (HTTPS, the only thing
+exposed, on ports 80/443) and the **app** (reachable only through Caddy).
+There's no public domain, so Caddy signs its own certificates with a local CA.
+
+```bash
+cp .env.example .env        # set SERVER_NAME to the server's campus IP/hostname
+docker compose up -d --build
+docker compose ps           # both containers should be "healthy"/"running"
+```
+
+Then open `https://<SERVER_NAME>` (plain `http://` redirects there). Each
+department signs in with `admin` / `admin123` once and is made to choose its own
+password before it can do anything else.
+
+**Remove the browser warning.** Until campus PCs trust Caddy's local CA they'll
+see a certificate warning. Export the root certificate once:
+
+```bash
+docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./davuni-timetable-root.crt
+```
+
+and install it as a trusted root on the PCs (Windows: double-click → Install
+Certificate → Local Machine → *Trusted Root Certification Authorities*; or push
+it via Group Policy). Keep the `caddy-data` volume: deleting it creates a new
+CA and every PC would need the new certificate.
+
+**Backups.** Everything lives in the `scheduler-data` volume (each department's
+rooms/register/settings and changed passwords):
+
+```bash
+docker run --rm -v davuni-scheduler_scheduler-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/timetable-data-$(date +%F).tgz -C /data .
+```
+
+(`docker volume ls` shows the exact volume name.) To reset a department's
+password to the default, delete its entry from `credentials.json` in that volume.
+
+**Logs.** `docker compose logs -f app` shows sign-ins, failed logins, password
+changes and solver runs, with client IPs. Logs are rotated (5 × 10 MB).
+
+**Notes.**
+- Run exactly one app container with one worker: sign-in sessions and the
+  generated timetables live in memory, so a restart signs everyone out and the
+  timetable is regenerated on the next visit (registers and settings are saved).
+- The interactive API docs (`/docs`) are off; set `ENABLE_API_DOCS=true` to turn
+  them on for development.
+- Corrupt data files are never overwritten: an unreadable `dept_<id>.json` is
+  copied to `dept_<id>.json.unreadable-<time>` and logged before the app starts
+  that department empty.
 
 ## Editing department settings from code
 
@@ -221,6 +277,8 @@ rooms, settings, generated timetable and the Excel download — belongs to that 
   entries there — no code change needed.
 - Each department's data is saved in its own file, `backend/data/dept_<id>.json`. An existing single-department
   `app_state.json` is migrated into `dept_cse.json` automatically on first start.
-- All departments share `APP_USERNAME` / `APP_PASSWORD` by default. To give a department its own login, set
-  `APP_USERNAME_<ID>` and/or `APP_PASSWORD_<ID>` (e.g. `APP_PASSWORD_CIVIL=...`).
+- All departments share `APP_USERNAME` / `APP_PASSWORD` by default, so anyone with one department's login can
+  sign in to every department. To give a department its own login (recommended), set
+  `APP_USERNAME_<ID>` and/or `APP_PASSWORD_<ID>` (e.g. `APP_PASSWORD_CIVIL=...`), or have each department use
+  *Change password* after first sign-in.
 

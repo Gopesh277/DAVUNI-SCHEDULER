@@ -78,8 +78,10 @@ pnpm-debug.log*
 *.temp
 .cache/
 
-# Runtime app state (regenerated on first launch, never seeded with data)
+# Runtime app state (regenerated on first launch, never seeded with data).
+# Department registers hold staff names and employee IDs -- never commit them.
 backend/data/app_state.json
+backend/data/dept_*.json
 
 # Keep the Docker env template
 !.env.example

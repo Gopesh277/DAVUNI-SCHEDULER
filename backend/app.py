@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import tempfile
 import threading
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -23,10 +25,25 @@ from timetable_scheduler import (
 )
 from . import auth, departments
 from . import store as store_mod
+from .schemas import MAX_COURSE_ROWS, MAX_HOURS_PER_ROW
 from .schemas import CourseIn, ConfigIn, SolverSettingsIn, GenerateRequest, LoginIn, ChangePasswordIn, PlaceRequest, MoveRequest, UnplaceRequest
 from .store import store
 
-app = FastAPI(title="DAV University Timetable API")
+# Uvicorn only configures its own loggers; give the app's an INFO handler too
+# so sign-ins, password changes and solves show up in `docker compose logs`.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("davuni")
+
+# The interactive API docs (/docs, /redoc, /openapi.json) sit outside /api/ and so
+# would be public; only turn them on for development.
+_API_DOCS = os.environ.get("ENABLE_API_DOCS", "false").strip().lower() in ("true", "1", "yes")
+app = FastAPI(
+    title="DAV University Timetable API",
+    docs_url="/docs" if _API_DOCS else None,
+    redoc_url="/redoc" if _API_DOCS else None,
+    openapi_url="/openapi.json" if _API_DOCS else None,
+)
 
 # No CORSMiddleware: the frontend is served by this same app (see the
 # StaticFiles mount below), so browser requests are same-origin and don't
@@ -36,10 +53,30 @@ app = FastAPI(title="DAV University Timetable API")
 # API paths reachable without a session -- everything else under /api/
 # requires a valid login.
 PUBLIC_API_PATHS = {"/api/login", "/api/logout", "/api/me", "/api/health", "/api/departments"}
+# All a department still on the default admin123 password may do: choose its own.
+DEFAULT_PASSWORD_API_PATHS = PUBLIC_API_PATHS | {"/api/change-password"}
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB -- a teaching-load register is a
                                      # few hundred rows at most; this just
                                      # bounds worst-case memory use per upload.
+MAX_XLSX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # an .xlsx is a zip: refuse "zip bombs"
+
+# Sent on every response. The CSP only allows this app's own scripts (no
+# inline <script>), so even if some text slipped into the page unescaped it
+# couldn't run; inline style="" attributes and Google Fonts are still allowed
+# because the UI uses them. frame-ancestors/X-Frame-Options stop clickjacking.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+        "connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -66,11 +103,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if path not in PUBLIC_API_PATHS:
                 if not authed:
                     return JSONResponse({"detail": "Not authenticated."}, status_code=401)
+            if authed and path not in DEFAULT_PASSWORD_API_PATHS and auth.using_default_password(dept_id):
+                return JSONResponse(
+                    {"detail": "Choose a new password before using the app.", "must_change_password": True},
+                    status_code=403)
         elif path in ("/", "/index.html"):
             if not authed:
                 return RedirectResponse(url="/login.html")
 
         response = await call_next(request)
+        for k, v in SECURITY_HEADERS.items():
+            response.headers.setdefault(k, v)
         if path.startswith("/api/") or path in ("/", "/index.html"):
             response.headers["Cache-Control"] = "no-store"   # data / app shell is never served from a browser cache
         return response
@@ -333,6 +376,7 @@ def login(payload: LoginIn, request: Request, response: Response):
     client_ip = request.client.host if request.client else "unknown"
     allowed, retry_after = auth.check_rate_limit(client_ip)
     if not allowed:
+        log.warning("login locked out ip=%s", client_ip)
         raise HTTPException(429, f"Too many failed login attempts. Try again in {retry_after}s.")
 
     dept = departments.get(payload.department)
@@ -340,10 +384,13 @@ def login(payload: LoginIn, request: Request, response: Response):
         raise HTTPException(400, "Please select your department.")
     if not auth.verify_credentials(payload.username, payload.password, dept["id"]):
         auth.record_failed_attempt(client_ip)
+        log.warning("login failed dept=%s ip=%s", dept["id"], client_ip)
         raise HTTPException(401, "Invalid username or password.")
     auth.clear_failed_attempts(client_ip)
+    log.info("login ok dept=%s ip=%s", dept["id"], client_ip)
     _set_session_cookie(response, auth.create_session(dept["id"]))
-    return {"ok": True, "role": auth.ROLE_DEPT, "username": payload.username.strip(), "department": dept, "redirect": "/"}
+    return {"ok": True, "role": auth.ROLE_DEPT, "username": payload.username.strip(), "department": dept, "redirect": "/",
+            "must_change_password": auth.using_default_password(dept["id"])}
 
 
 @app.post("/api/logout")
@@ -354,7 +401,7 @@ def logout(request: Request, response: Response):
 
 
 @app.post("/api/change-password")
-def change_password(payload: ChangePasswordIn, request: Request):
+def change_password(payload: ChangePasswordIn, request: Request, response: Response):
     """Let the signed-in department admin change their own password.
 
     Requires the current password (so a walk-up on an unlocked browser can't
@@ -381,8 +428,13 @@ def change_password(payload: ChangePasswordIn, request: Request):
 
     auth.set_password(dept_id, payload.new_password)
     auth.clear_failed_attempts(client_ip)
-    signed_out = auth.destroy_other_sessions(dept_id, token)
-    return {"ok": True, "other_sessions_signed_out": signed_out}
+    # Issue a fresh session token for this browser and kill every other one
+    # (including the old token), so a token captured before the change is useless.
+    new_token = auth.create_session(dept_id)
+    signed_out = auth.destroy_other_sessions(dept_id, new_token)
+    _set_session_cookie(response, new_token)
+    log.info("password changed dept=%s ip=%s", dept_id, client_ip)
+    return {"ok": True, "other_sessions_signed_out": max(signed_out - 1, 0)}
 
 
 @app.get("/api/me")
@@ -395,6 +447,7 @@ def me(request: Request):
         "role": auth.ROLE_DEPT if authed else None,
         "username": auth.expected_username(info["dept"]) if authed else None,
         "department": dept,
+        "must_change_password": auth.using_default_password(info["dept"]) if authed else False,
     }
 
 
@@ -448,9 +501,32 @@ def get_courses():
     return {"courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)]}
 
 
+def _check_register_limits(offerings: list[CourseOffering]) -> None:
+    """Reject registers big enough to exhaust memory when expanded into sessions."""
+    if len(offerings) > MAX_COURSE_ROWS:
+        raise HTTPException(400, f"Too many course rows ({len(offerings)}). The limit is {MAX_COURSE_ROWS}.")
+    for i, o in enumerate(offerings, start=1):
+        for field in ("theory_hrs", "tutorial_hrs", "practical_hrs"):
+            v = getattr(o, field)
+            if not 0 <= v <= MAX_HOURS_PER_ROW:
+                raise HTTPException(
+                    400, f"Row {i} ({o.course_code}): {field} is {v}; it must be between 0 and {MAX_HOURS_PER_ROW}.")
+
+
+def _check_xlsx_not_zip_bomb(data: bytes) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            total = sum(info.file_size for info in zf.infolist())
+    except zipfile.BadZipFile:
+        return  # not a zip; the parser reports the real problem
+    if total > MAX_XLSX_UNCOMPRESSED_BYTES:
+        raise HTTPException(413, "This spreadsheet expands to too much data to be a teaching-load register.")
+
+
 @app.put("/api/courses")
 def put_courses(courses: list[CourseIn]):
     offerings = [CourseOffering(**c.dict()) for c in courses]
+    _check_register_limits(offerings)
     store.set_courses(offerings)
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
@@ -460,13 +536,16 @@ def put_courses(courses: list[CourseIn]):
 
 @app.post("/api/courses/upload")
 async def upload_courses(file: UploadFile = File(...)):
-    data = await file.read()
+    # read at most one byte past the limit instead of the whole (possibly huge) file
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, f"File too large ({len(data) / 1e6:.1f} MB). Max is {MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+        raise HTTPException(413, f"File too large. Max is {MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+    _check_xlsx_not_zip_bomb(data)
     try:
         offerings = parse_teaching_load_bytes(data, file.filename)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    _check_register_limits(offerings)
     store.set_courses(offerings)
     return {
         "courses": [_course_to_dict(c, i) for i, c in enumerate(store.courses)],
@@ -524,6 +603,8 @@ def generate(req: GenerateRequest = GenerateRequest()):
             cancel_event=cancel,
         )
         store.last_result = result
+        log.info("solve dept=%s status=%s placed=%d unplaced=%d %.1fs", store_mod.current_department_id(),
+                 result.status, len(result.placed), len(result.unplaced), result.wall_time_seconds)
         response = _result_to_dict(result)
         response["capacity"] = capacity
         return response
@@ -615,10 +696,14 @@ def download_schedule(view: str = "all"):
         raise HTTPException(404, "No schedule generated yet. POST /api/generate first.")
     dept = departments.get(store_mod.current_department_id()) or {}
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        export_workbook(store.last_result, tmp.name,
+        path = tmp.name
+    try:
+        export_workbook(store.last_result, path,
                         department_name=dept.get("display", "Department of Computer Science & Engineering"),
                         views=None if view == "all" else [view])
-        path = tmp.name
+    except Exception:
+        os.unlink(path)  # don't leave a half-written temp file behind
+        raise
     suffix = "" if view == "all" else f"_{view[:-1]}_wise"
     return FileResponse(
         path, filename=f"timetable_{dept.get('id', 'dept')}{suffix}.xlsx",

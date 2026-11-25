@@ -1,0 +1,20 @@
+# HTTPS reverse proxy for the timetable app on the campus LAN.
+{
+	# No public domain, so no Let's Encrypt: sign certificates with Caddy's own
+	# local CA. Install its root certificate on campus PCs to avoid the browser
+	# warning (see README "Production deployment").
+	local_certs
+}
+
+{$SERVER_NAME} {
+	encode zstd gzip
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	# Uploads are capped at 5 MB by the app; refuse anything far larger here.
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy app:8000
+}

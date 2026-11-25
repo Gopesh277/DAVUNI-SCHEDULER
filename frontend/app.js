@@ -1,5 +1,9 @@
 const API = "/api";
 
+// Escape text before it goes into innerHTML / an HTML attribute. Every value
+// that comes from the register, settings or the server must go through this.
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 let cfg = null;             // { rooms, lab_rooms, days, periods, day_break_after_period, practical_block_size }
 let solverSettings = null;  // { time_limit, workers, balance }
 let courses = [];           // current register rows (with row_id)
@@ -67,14 +71,14 @@ function renderStats() {
 function renderScheduleNotice() {
   if (!schedule) { clearNotice(); return; }
   if ((schedule.status === "INFEASIBLE" || schedule.status === "UNKNOWN") && schedule.stats.placed === 0) {
-    notice("err", `<b>No timetable could be produced</b> (solver status: ${schedule.status}). ${schedule.message || ""} Raise the time limit in Settings, or thin out the register — some teacher, section, or room combination is over-booked for the available ${cfg.days.length * cfg.periods.length} weekly slots.`);
+    notice("err", `<b>No timetable could be produced</b> (solver status: ${esc(schedule.status)}). ${esc(schedule.message)} Raise the time limit in Settings, or thin out the register — some teacher, section, or room combination is over-booked for the available ${cfg.days.length * cfg.periods.length} weekly slots.`);
   } else if (schedule.stats.unplaced === 0) {
-    notice("ok", `<b>All ${schedule.stats.sessions_total} weekly sessions placed</b> with no teacher, section or room clashes, in ${schedule.wall_time_seconds}s (${schedule.status}).`);
+    notice("ok", `<b>All ${schedule.stats.sessions_total} weekly sessions placed</b> with no teacher, section or room clashes, in ${esc(schedule.wall_time_seconds)}s (${esc(schedule.status)}).`);
   } else {
-    const sample = schedule.unplaced.slice(0, 4).map(u => `${u.course_code} (${u.teacher} · ${u.section})`).join(", ");
+    const sample = schedule.unplaced.slice(0, 4).map(u => `${esc(u.course_code)} (${esc(u.teacher)} · ${esc(u.section)})`).join(", ");
     const pct = schedule.stats.completion_percentage;
     const capWarn = schedule.capacity && schedule.capacity.warnings.length
-      ? ` Likely cause: ${schedule.capacity.warnings[0]}`
+      ? ` Likely cause: ${esc(schedule.capacity.warnings[0])}`
       : "";
     notice("warn", `<b>Best-effort timetable — ${pct}% complete.</b> ${schedule.stats.unplaced} session(s) couldn't be placed out of ${schedule.stats.sessions_total} — e.g. ${sample}${schedule.stats.unplaced > 4 ? ", …" : ""}.${capWarn} Try a longer time limit, thin out the register on Manage data, or place them by hand on the Unplaced sessions tab.`);
   }
@@ -94,15 +98,15 @@ function buildGridHTML(sessionsForThis, labelFn, opts = {}) {
     (map[key] = map[key] || []).push(s);
   });
   let html = `<table class="tt"><thead><tr><th>Day</th>`;
-  periods.forEach(p => html += `<th class="timecol">${p.label}</th>`);
+  periods.forEach(p => html += `<th class="timecol">${esc(p.label)}</th>`);
   html += `</tr></thead><tbody>`;
   days.forEach((day, di) => {
-    html += `<tr><th>${day}</th>`;
+    html += `<tr><th>${esc(day)}</th>`;
     const occupiedCols = new Set();
     periods.forEach(p => {
       if (occupiedCols.has(p.index)) return;
       const items = map[cellKey(di, p.index)] || [];
-      const roomAttr = fixedRoom ? ` data-room="${fixedRoom}"` : "";
+      const roomAttr = fixedRoom ? ` data-room="${esc(fixedRoom)}"` : "";
       if (items.length === 0) {
         html += `<td class="cell" data-day="${di}" data-period="${p.index}"${roomAttr}></td>`;
         return;
@@ -111,12 +115,12 @@ function buildGridHTML(sessionsForThis, labelFn, opts = {}) {
       html += `<td class="cell" data-day="${di}" data-period="${p.index}"${roomAttr} ${first.duration === 2 ? 'colspan="2"' : ""}>`;
       if (first.duration === 2) occupiedCols.add(p.index + 1);
       items.forEach(s => {
-        const groupTag = s.group ? ` · ${s.group}` : "";
+        const groupTag = s.group ? ` · ${esc(s.group)}` : "";
         html += `<div class="slot ${s.kind === "Practical" ? "lab" : ""}" draggable="true"
-          data-session-id="${s.id}" data-duration="${s.duration}" data-kind="${s.kind}">
-          <span class="code">${s.course_code}</span>
-          <span class="meta">${labelFn(s)}</span>
-          <span class="meta">${s.kind}${s.duration === 2 ? " · 2 periods" : ""} · Room ${s.room}${groupTag}</span>
+          data-session-id="${esc(s.id)}" data-duration="${esc(s.duration)}" data-kind="${esc(s.kind)}">
+          <span class="code">${esc(s.course_code)}</span>
+          <span class="meta">${esc(labelFn(s))}</span>
+          <span class="meta">${esc(s.kind)}${s.duration === 2 ? " · 2 periods" : ""} · Room ${esc(s.room)}${groupTag}</span>
         </div>`;
       });
       html += `</td>`;
@@ -131,7 +135,7 @@ function renderRoomView() {
   const sel = document.getElementById("roomSelect");
   const rooms = cfg.rooms;
   if (sel.dataset.count != rooms.length) {
-    sel.innerHTML = rooms.map(r => `<option value="${r}">Room ${r}</option>`).join("");
+    sel.innerHTML = rooms.map(r => `<option value="${esc(r)}">Room ${esc(r)}</option>`).join("");
     sel.dataset.count = rooms.length;
   }
   const room = sel.value || rooms[0];
@@ -147,7 +151,7 @@ function renderTeacherView() {
   const sel = document.getElementById("teacherSelect");
   const teachers = [...new Set(courses.map(c => (c.faculty || "Unassigned").trim()))].sort();
   if (sel.dataset.count != teachers.length) {
-    sel.innerHTML = teachers.map(t => `<option value="${t}">${t}</option>`).join("");
+    sel.innerHTML = teachers.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
     sel.dataset.count = teachers.length;
   }
   const teacher = sel.value || teachers[0];
@@ -156,7 +160,7 @@ function renderTeacherView() {
   const row = courses.find(c => (c.faculty || "").trim() === teacher);
   const nature = row ? row.nature : "Regular";
   const cls = /contract/i.test(nature || "") ? "con" : "reg";
-  document.getElementById("teacherPill").innerHTML = `${hrs} contact hrs/week · <span class="tagchip ${cls}">${nature}</span>`;
+  document.getElementById("teacherPill").innerHTML = `${hrs} contact hrs/week · <span class="tagchip ${cls}">${esc(nature)}</span>`;
   document.getElementById("teacherGridHost").innerHTML = sessions.length
     ? buildGridHTML(sessions, s => `${s.course_code} · ${s.section}`)
     : `<div class="empty-state">No sessions for this faculty member yet — click Generate timetable, or place one from the Unplaced sessions tab.</div>`;
@@ -166,7 +170,7 @@ function renderSectionView() {
   const sel = document.getElementById("sectionSelect");
   const sections = [...new Set(courses.map(c => c.base_section))].sort();
   if (sel.dataset.count != sections.length) {
-    sel.innerHTML = sections.map(s => `<option value="${s}">${s}</option>`).join("");
+    sel.innerHTML = sections.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
     sel.dataset.count = sections.length;
   }
   const section = sel.value || sections[0];
@@ -197,13 +201,13 @@ function renderLoadView() {
     const over = r.total > 22;
     const atCap = r.busiest_day >= r.daily_cap;
     html += `<tr>
-      <td><b>${r.faculty}</b></td>
-      <td><span class="tagchip ${cls}">${r.nature}</span></td>
-      <td>${r.theory}</td><td>${r.practical}</td><td>${r.tutorial}</td>
-      <td><span ${atCap ? 'style="color:var(--gold-deep);font-weight:600;"' : ""}>${r.busiest_day} / ${r.daily_cap} cap</span></td>
+      <td><b>${esc(r.faculty)}</b></td>
+      <td><span class="tagchip ${cls}">${esc(r.nature)}</span></td>
+      <td>${esc(r.theory)}</td><td>${esc(r.practical)}</td><td>${esc(r.tutorial)}</td>
+      <td><span ${atCap ? 'style="color:var(--gold-deep);font-weight:600;"' : ""}>${esc(r.busiest_day)} / ${esc(r.daily_cap)} cap</span></td>
       <td><div style="display:flex;align-items:center;gap:8px;">
         <div class="bar-track"><div class="bar-fill ${over ? "over" : ""}" style="width:${pct}%"></div></div>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">${r.total} hrs</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">${esc(r.total)} hrs</span>
       </div></td>
     </tr>`;
   });
@@ -216,12 +220,12 @@ function renderUnplacedTray() {
   if (!schedule) { host.innerHTML = ""; return; }
   const unplaced = schedule.unplaced || [];
   const chips = unplaced.map(u => {
-    const groupTag = u.group ? ` · ${u.group}` : "";
+    const groupTag = u.group ? ` · ${esc(u.group)}` : "";
     return `<div class="unplaced-chip ${u.kind === "Practical" ? "lab" : ""}" draggable="true"
-      data-session-id="${u.id}" data-duration="${u.duration}" data-kind="${u.kind}">
-      <span class="code">${u.course_code}</span>
-      <span class="meta">${u.teacher} · ${u.section}${groupTag}</span>
-      <span class="meta">${u.kind}${u.duration === 2 ? " · 2 periods" : ""}</span>
+      data-session-id="${esc(u.id)}" data-duration="${esc(u.duration)}" data-kind="${esc(u.kind)}">
+      <span class="code">${esc(u.course_code)}</span>
+      <span class="meta">${esc(u.teacher)} · ${esc(u.section)}${groupTag}</span>
+      <span class="meta">${esc(u.kind)}${u.duration === 2 ? " · 2 periods" : ""}</span>
     </div>`;
   }).join("");
   host.innerHTML = `
@@ -257,7 +261,7 @@ function renderUnplacedGrid() {
   }
 
   if (targetSel.dataset.mode !== mode || targetSel.dataset.count != targets.length) {
-    targetSel.innerHTML = targets.map(t => `<option value="${t}">${t}</option>`).join("");
+    targetSel.innerHTML = targets.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
     targetSel.dataset.mode = mode;
     targetSel.dataset.count = targets.length;
   }
@@ -316,7 +320,7 @@ function drawEditorTable() {
       if (f.type === "select") {
         html += `<td><select data-field="${f.k}">${f.options.map(o => `<option ${row[f.k] === o ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
       } else {
-        const v = (row[f.k] ?? "").toString().replace(/"/g, "&quot;");
+        const v = esc(row[f.k]);
         html += `<td><input data-field="${f.k}" type="${f.type || "text"}" value="${v}"></td>`;
       }
     });
@@ -368,7 +372,7 @@ document.getElementById("applyEditsBtn").addEventListener("click", async () => {
     courses = res.courses;
     await regenerate();
   } catch (e) {
-    notice("err", `<b>Couldn't save the register.</b> ${e.message}`);
+    notice("err", `<b>Couldn't save the register.</b> ${esc(e.message)}`);
   } finally {
     setBusy(btn, false, "Save &amp; regenerate");
   }
@@ -392,7 +396,7 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
     if (document.getElementById("panel-data").classList.contains("active")) renderEditor();
     await regenerate();
   } catch (err) {
-    notice("err", `<b>Couldn't read "${file.name}".</b> ${err.message}`);
+    notice("err", `<b>Couldn't read "${esc(file.name)}".</b> ${esc(err.message)}`);
   } finally {
     setBusy(btn, false, "↑ Load teaching-load file");
     e.target.value = "";
@@ -427,6 +431,9 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
 // =====================================================================
 // Change password
 // =====================================================================
+// Set up below; init() calls it when the department is still on the default password.
+let forcePasswordChange = () => {};
+
 (function setupChangePassword() {
   const modal = document.getElementById("changePwModal");
   const errBox = document.getElementById("changePwError");
@@ -436,9 +443,11 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   const conf = document.getElementById("pwConfirm");
   const saveBtn = document.getElementById("changePwSave");
   const fields = [cur, nw, conf];
+  const cancelBtn = document.getElementById("changePwCancel");
+  let forced = false;   // first sign-in with the default password: can't be dismissed
 
   const showErr = (m) => { okBox.style.display = "none"; errBox.textContent = m; errBox.style.display = "block"; };
-  const close = () => { modal.style.display = "none"; fields.forEach(f => f.value = ""); };
+  const close = () => { if (forced) return; modal.style.display = "none"; fields.forEach(f => f.value = ""); };
   const open = () => {
     errBox.style.display = "none"; okBox.style.display = "none";
     document.getElementById("pwShow").checked = false;
@@ -447,8 +456,17 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
     cur.focus();
   };
 
+  forcePasswordChange = () => {
+    forced = true;
+    document.getElementById("changePwTitle").textContent = "Choose your password";
+    document.getElementById("changePwSub").textContent =
+      "You signed in with the default password. Choose your department's own password to continue. Enter the default password (admin123) as the current password.";
+    cancelBtn.textContent = "Sign out";
+    open();
+  };
+
   document.getElementById("changePwBtn").addEventListener("click", open);
-  document.getElementById("changePwCancel").addEventListener("click", close);
+  cancelBtn.addEventListener("click", () => forced ? document.getElementById("logoutBtn").click() : close());
   modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modal.style.display !== "none") close(); });
   document.getElementById("pwShow").addEventListener("change", (e) => {
@@ -468,6 +486,7 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
       fields.forEach(f => f.value = "");
       okBox.textContent = "Password updated. Use the new password the next time you sign in.";
       okBox.style.display = "block";
+      if (forced) { setTimeout(() => window.location.reload(), 1200); return; }
       setTimeout(() => { if (modal.style.display !== "none") close(); }, 1800);
     } catch (err) {
       showErr(err.message || "Couldn't change the password.");
@@ -503,8 +522,8 @@ function drawPositionCapRows() {
   const host = document.getElementById("positionCapsHost");
   host.innerHTML = positionCapRows.map((row, i) => `
     <div class="position-cap-row" data-i="${i}">
-      <input type="text" class="pc-name" value="${(row.position ?? "").toString().replace(/"/g, "&quot;")}" placeholder="Register category, e.g. Senior">
-      <input type="number" class="pc-cap" value="${row.cap}" min="1" max="20">
+      <input type="text" class="pc-name" value="${esc(row.position)}" placeholder="Register category, e.g. Senior">
+      <input type="number" class="pc-cap" value="${esc(row.cap)}" min="1" max="20">
       <span class="cap-suffix">periods/day</span>
       <button class="row-del" title="Remove category">✕</button>
     </div>`).join("");
@@ -527,8 +546,8 @@ function renderLabRoomChips() {
   const host = document.getElementById("labRoomsHost");
   host.innerHTML = cfg.rooms.map(r => {
     const on = cfg.lab_rooms.includes(r);
-    return `<label class="chip ${on ? "on" : ""}" data-room="${r}">
-      <input type="checkbox" ${on ? "checked" : ""}> ${r}
+    return `<label class="chip ${on ? "on" : ""}" data-room="${esc(r)}">
+      <input type="checkbox" ${on ? "checked" : ""}> ${esc(r)}
     </label>`;
   }).join("");
   host.querySelectorAll(".chip").forEach(chip => {
@@ -547,8 +566,8 @@ function renderPeriodRows() {
   const host = document.getElementById("periodsHost");
   host.innerHTML = cfg.periods.map((p, i) => `
     <div class="period-row" data-i="${i}">
-      <input type="number" class="p-index" value="${p.index}" min="1">
-      <input type="text" class="p-label" value="${p.label}">
+      <input type="number" class="p-index" value="${esc(p.index)}" min="1">
+      <input type="text" class="p-label" value="${esc(p.label)}">
       <button class="row-del" title="Remove period">✕</button>
     </div>`).join("");
   host.querySelectorAll(".period-row").forEach(row => {
@@ -604,7 +623,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     renderSettings();
     await regenerate();
   } catch (e) {
-    notice("err", `<b>Couldn't save settings.</b> ${e.message}`);
+    notice("err", `<b>Couldn't save settings.</b> ${esc(e.message)}`);
   } finally {
     setBusy(btn, false, "Save settings &amp; regenerate");
   }
@@ -733,7 +752,7 @@ document.addEventListener("drop", async (e) => {
       document.getElementById("genMeta").textContent = `edited ${new Date().toLocaleString()}`;
       renderAllViews();
     } catch (err) {
-      notice("err", `<b>Couldn't unplace it.</b> ${err.message}`);
+      notice("err", `<b>Couldn't unplace it.</b> ${esc(err.message)}`);
     }
     return;
   }
@@ -751,7 +770,7 @@ document.addEventListener("drop", async (e) => {
     document.getElementById("genMeta").textContent = `edited ${new Date().toLocaleString()}`;
     renderAllViews();
   } catch (err) {
-    notice("err", `<b>Couldn't place it there.</b> ${err.message}`);
+    notice("err", `<b>Couldn't place it there.</b> ${esc(err.message)}`);
   }
 });
 
@@ -800,7 +819,7 @@ async function regenerate() {
     renderTeacherView();
     renderSectionView();
     renderLoadView();
-    notice("err", `<b>Generation failed.</b> ${e.message} If this was a network timeout, the solver may still have been working — try Generate again, or raise the time limit in Settings.`);
+    notice("err", `<b>Generation failed.</b> ${esc(e.message)} If this was a network timeout, the solver may still have been working — try Generate again, or raise the time limit in Settings.`);
   } finally {
     if (mySeq === genSeq) setBusy(btn, false, "⟳ Generate timetable");
   }
@@ -830,7 +849,7 @@ document.getElementById("resetBtn").addEventListener("click", async () => {
     renderAllViews();
     notice("info", `<b>Board reset.</b> The register and timetable have been cleared. Upload a <code>.xlsx</code>/<code>.csv</code> register with "↑ Load teaching-load file" or add rows under Manage data to start again.`);
   } catch (e) {
-    notice("err", `<b>Couldn't reset the board.</b> ${e.message}`);
+    notice("err", `<b>Couldn't reset the board.</b> ${esc(e.message)}`);
   } finally {
     setBusy(btn, false, "✕ Reset board");
   }
@@ -877,7 +896,7 @@ document.getElementById("roomSetupSave").addEventListener("click", async () => {
   const labs = parseRoomList(document.getElementById("setupLabs").value);
   if (rooms.length === 0) return showErr("Please add at least one room.");
   const unknown = labs.filter(l => !rooms.includes(l));
-  if (unknown.length) return showErr(`Lab room${unknown.length > 1 ? "s" : ""} <b>${unknown.join(", ")}</b> ${unknown.length > 1 ? "are" : "is"} not in the rooms list. Add ${unknown.length > 1 ? "them" : "it"} to Rooms first.`);
+  if (unknown.length) return showErr(`Lab room${unknown.length > 1 ? "s" : ""} <b>${esc(unknown.join(", "))}</b> ${unknown.length > 1 ? "are" : "is"} not in the rooms list. Add ${unknown.length > 1 ? "them" : "it"} to Rooms first.`);
 
   const btn = document.getElementById("roomSetupSave");
   setBusy(btn, true, "Saving…");
@@ -889,14 +908,22 @@ document.getElementById("roomSetupSave").addEventListener("click", async () => {
     await init();
     notice("ok", `<b>${rooms.length} room${rooms.length > 1 ? "s" : ""} saved.</b> Now load your teaching-load register with "↑ Load teaching-load file" to build the timetable.`);
   } catch (e) {
-    showErr(e.message);
+    showErr(esc(e.message));
   } finally {
     setBusy(btn, false, "Save rooms &amp; continue");
   }
 });
 
 async function init() {
-  const [me, configRes, coursesRes] = await Promise.all([getJSON("/me"), getJSON("/config"), getJSON("/courses")]);
+  const me = await getJSON("/me");
+  if (me.must_change_password) {
+    // Signed in with the default admin123: nothing else works until a new password is chosen.
+    applyDepartment(me.department);
+    document.getElementById("genMeta").textContent = "choose a password to continue";
+    forcePasswordChange();
+    return;
+  }
+  const [configRes, coursesRes] = await Promise.all([getJSON("/config"), getJSON("/courses")]);
   applyDepartment(me.department || configRes.department);
   cfg = configRes.config;
   solverSettings = configRes.solver_settings;
@@ -946,7 +973,7 @@ async function saveSolverFields() {
     solverSettings = r.solver_settings;
     document.getElementById("settingsSavedPill").textContent = `solver: ${solverSettings.time_limit}s saved`;
   } catch (e) {
-    notice("err", `<b>Couldn't save solver settings.</b> ${e.message}`);
+    notice("err", `<b>Couldn't save solver settings.</b> ${esc(e.message)}`);
   }
 }
 ["timeLimitInput", "workersInput", "balanceInput"].forEach((id) =>

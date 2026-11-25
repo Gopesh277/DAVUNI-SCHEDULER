@@ -20,8 +20,11 @@ etc. and always get the signed-in department's data.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import threading
+import time
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -33,6 +36,8 @@ from timetable_scheduler.config import (
 )
 
 from . import departments
+
+log = logging.getLogger("davuni.store")
 
 DATA_DIR = Path(__file__).parent / "data"
 LEGACY_STATE_FILE = DATA_DIR / "app_state.json"  # pre-multi-department single-file state (CSE)
@@ -98,6 +103,15 @@ class DeptStore:
                     self._persist()  # migrate legacy file into the per-department file
                 return
             except Exception:
+                # Keep a copy of the unreadable file before anything can overwrite
+                # it -- previously this silently started empty and then saved the
+                # empty state over the department's data.
+                bad = f.with_name(f"{f.name}.unreadable-{int(time.time())}")
+                try:
+                    shutil.copy2(f, bad)
+                except OSError:
+                    pass
+                log.exception("Could not read %s; kept a copy at %s and starting empty", f, bad)
                 continue  # fall through to a clean empty state
         self.courses = []
         self._persist()
@@ -109,7 +123,14 @@ class DeptStore:
             "config": self.config.to_dict(),
             "solver_settings": self.solver_settings,
         }
-        self.state_file.write_text(json.dumps(d, indent=2, default=str))
+        # Write to a temp file and rename it into place, so a crash or full disk
+        # mid-write can never leave a half-written (unreadable) department file.
+        tmp = self.state_file.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(d, indent=2, default=str))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, self.state_file)
 
     # ---------------- mutators -----------------------------------------
     def set_courses(self, courses: list[CourseOffering]):

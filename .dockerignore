@@ -24,3 +24,6 @@ docker-compose.yml
 backend/data/
 *.xlsx
 *.csv
+*.patch
+Caddyfile
+.env.example

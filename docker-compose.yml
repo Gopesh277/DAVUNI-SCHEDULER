@@ -1,31 +1,70 @@
+# Production stack for the campus LAN:
+#   proxy  Caddy -- the only thing exposed (ports 80/443). Serves HTTPS with a
+#          certificate from its own local CA (there is no public domain, so
+#          Let's Encrypt can't be used) and redirects http -> https.
+#   app    the timetable app; reachable only from the proxy, never directly.
+#
+#   cp .env.example .env      # set SERVER_NAME (and anything else) there
+#   docker compose up -d --build
+#
+# See README "Production deployment" for installing Caddy's root certificate on
+# campus PCs (removes the browser warning) and for backups.
+
 services:
-  scheduler:
+  app:
     build: .
     image: davuni-scheduler:latest
     container_name: davuni-scheduler
-    ports:
-      - "8000:8000"
     # Optional .env file (copy .env.example). Besides the shared login it can
-    # hold per-department logins such as APP_PASSWORD_CIVIL. Needs Docker
-    # Compose v2.24+ for "required: false"; on older versions create a .env
-    # file first (it can be empty).
+    # hold per-department logins such as APP_PASSWORD_CIVIL.
     env_file:
       - path: .env
         required: false
     environment:
       APP_USERNAME: ${APP_USERNAME:-admin}
+      # Default admin / admin123: on first sign-in each department is made to
+      # choose its own password before it can do anything else.
       APP_PASSWORD: ${APP_PASSWORD:-admin123}
-      # "false" is needed when serving over plain http on anything other than
-      # localhost. Set to "true" once TLS sits in front (reverse proxy).
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # HTTPS is always in front (the proxy), so the cookie is HTTPS-only.
+      COOKIE_SECURE: "true"
+      # Only the proxy can reach this container (no published port), so trust
+      # its X-Forwarded-For: login rate limiting then sees each user's real IP.
+      FORWARDED_ALLOW_IPS: "*"
+    expose:
+      - "8000"
     volumes:
-      # every department's rooms, register and settings (dept_<id>.json)
+      # every department's rooms, register, settings and changed passwords
       - scheduler-data:/app/backend/data
       # Optional: edit the department list without rebuilding the image.
-      # Create/keep a real backend/departments.json file first, then
-      # uncomment, and restart the container after editing.
       # - ./backend/departments.json:/app/backend/departments.json:ro
     restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  proxy:
+    image: caddy:2.10-alpine
+    container_name: davuni-proxy
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # The campus IP address and/or hostname(s) people type, comma separated,
+      # e.g. "10.20.1.15" or "10.20.1.15, timetable.davuniv.local".
+      SERVER_NAME: ${SERVER_NAME:?Set SERVER_NAME in .env to this server's campus IP or hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # holds the local CA + certificates -- keep it
+      - caddy-config:/config
+    restart: unless-stopped
+    logging: *logging
 
 volumes:
   scheduler-data:
+  caddy-data:
+  caddy-config:

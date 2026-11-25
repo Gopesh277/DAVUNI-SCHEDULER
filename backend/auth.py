@@ -9,8 +9,9 @@ dependency is required.
 Credentials are read from the APP_USERNAME / APP_PASSWORD environment
 variables (optionally overridden per department with APP_USERNAME_<ID> /
 APP_PASSWORD_<ID>, e.g. APP_PASSWORD_CIVIL) so they can be set per-deployment instead of living in source
-control. If unset, they fall back to admin / admin123 -- change this in
-production via the environment.
+control. If unset, they fall back to admin / admin123 -- but a department
+signed in with that default password must choose its own password before it
+can use the app (see using_default_password; the API blocks everything else).
 
 An admin can change their department's password from the app. The new
 password is stored as a salted scrypt hash in backend/data/credentials.json
@@ -38,7 +39,8 @@ SESSION_COOKIE = "tt_session"
 SESSION_TTL_SECONDS = 12 * 60 * 60  # 12 hours
 
 APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
+DEFAULT_PASSWORD = "admin123"
+APP_PASSWORD = os.environ.get("APP_PASSWORD", DEFAULT_PASSWORD)
 
 # Whether the session cookie gets the `Secure` flag (browser only sends it
 # back over HTTPS -- localhost is exempted by browsers, so local dev over
@@ -110,6 +112,15 @@ def expected_username(dept_id: str | None) -> str:
     return stored["username"] if stored else _expected_credentials(dept_id)[0]
 
 
+def using_default_password(dept_id: str | None) -> bool:
+    """True while this department still signs in with the built-in default
+    (or an empty) password, i.e. it hasn't chosen its own yet. Such a session
+    may only change the password -- every other API call is refused."""
+    if _stored_credentials(dept_id) is not None:
+        return False
+    return _expected_credentials(dept_id)[1] in ("", DEFAULT_PASSWORD)
+
+
 def verify_credentials(username: str, password: str, dept_id: str | None = None) -> bool:
     username = (username or "").strip()
     password = password or ""
@@ -138,6 +149,8 @@ def validate_new_password(new_password: str, current_password: str = "") -> None
         raise PasswordChangeError(f"New password must be at most {MAX_PASSWORD_LENGTH} characters long.")
     if new_password.strip() != new_password:
         raise PasswordChangeError("New password cannot start or end with a space.")
+    if hmac.compare_digest(new_password.encode(), DEFAULT_PASSWORD.encode()):
+        raise PasswordChangeError("Choose a password other than the default one.")
     if hmac.compare_digest(new_password.encode(), current_password.encode()):
         raise PasswordChangeError("New password must be different from the current one.")
 

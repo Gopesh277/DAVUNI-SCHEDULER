@@ -6,6 +6,10 @@ const deptHeading = document.getElementById("deptHeading");
 const footDept = document.getElementById("footDept");
 let departments = [];
 
+// Escape text before it goes into innerHTML / an HTML attribute. Every value
+// that comes from the register, settings or the server must go through this.
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 // Show the chosen department in the letterhead exactly like the main page does.
 function showDepartment() {
   const d = departments.find((x) => x.id === deptSelect.value);
@@ -19,7 +23,7 @@ fetch("/api/departments")
   .then((data) => {
     departments = data.departments || [];
     deptSelect.insertAdjacentHTML("beforeend", departments.map(
-      (d) => `<option value="${d.id}">${d.display}</option>`).join(""));
+      (d) => `<option value="${esc(d.id)}">${esc(d.display)}</option>`).join(""));
     // Don't pre-select a remembered department: the login page should
     // always open neutral ("All Departments") until the user picks one.
     showDepartment();
@@ -70,7 +74,9 @@ form.addEventListener("submit", async (e) => {
     try { localStorage.setItem("tt_department", department); } catch (e) {}
     const params = new URLSearchParams(window.location.search);
     const next = params.get("next");
-    window.location.href = next && next.startsWith("/") ? next : "/";
+    // Only same-site paths: "//evil.com" and "/\\evil.com" are other sites to a browser.
+    const safeNext = next && /^\/(?![\/\\])/.test(next) ? next : "/";
+    window.location.href = safeNext;
   } catch (err) {
     showError(err.message);
     submitBtn.disabled = false;
